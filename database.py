@@ -250,6 +250,19 @@ SCHEMA_SQLITE = '''
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (articulo_id) REFERENCES articulos_bodega(id)
     );
+    CREATE TABLE IF NOT EXISTS compras_bodega (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        articulo_id INTEGER NOT NULL,
+        fecha TEXT NOT NULL,
+        cantidad INTEGER NOT NULL,
+        proveedor TEXT,
+        precio_unitario REAL,
+        precio_total REAL,
+        numero_factura TEXT,
+        observaciones TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (articulo_id) REFERENCES articulos_bodega(id)
+    );
 '''
 
 SCHEMA_PG = '''
@@ -368,6 +381,18 @@ SCHEMA_PG = '''
         motivo TEXT,
         referencia TEXT,
         responsable TEXT,
+        observaciones TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS compras_bodega (
+        id SERIAL PRIMARY KEY,
+        articulo_id INTEGER NOT NULL,
+        fecha TEXT NOT NULL,
+        cantidad INTEGER NOT NULL,
+        proveedor TEXT,
+        precio_unitario REAL,
+        precio_total REAL,
+        numero_factura TEXT,
         observaciones TEXT,
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );

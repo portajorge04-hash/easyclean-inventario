@@ -702,6 +702,54 @@ def bodega_ajuste():
     db.close()
     return redirect(url_for('bodega'))
 
+# ─── Compras Bodega ───────────────────────────────────────────────────────────
+
+@app.route('/compras/bodega', methods=['GET', 'POST'])
+def compras_bodega():
+    db = get_db()
+    if request.method == 'POST':
+        art_id   = int(request.form['articulo_id'])
+        fecha    = request.form['fecha']
+        cantidad = int(request.form['cantidad'])
+        proveedor = request.form.get('proveedor', '')
+        precio_u  = request.form.get('precio_unitario') or None
+        precio_t  = request.form.get('precio_total') or None
+        factura   = request.form.get('numero_factura', '')
+        obs       = request.form.get('observaciones', '')
+
+        db.execute("""
+            INSERT INTO compras_bodega
+            (articulo_id, fecha, cantidad, proveedor, precio_unitario, precio_total, numero_factura, observaciones)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (art_id, fecha, cantidad, proveedor, precio_u, precio_t, factura, obs))
+
+        db.execute("""
+            INSERT INTO movimientos_bodega
+            (articulo_id, tipo, cantidad, fecha, motivo, referencia, responsable, observaciones)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (art_id, 'Entrada', cantidad, fecha, 'Compra', factura, proveedor, obs))
+
+        db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual + ? WHERE id=?",
+                   (cantidad, art_id))
+        db.commit()
+        art = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (art_id,)).fetchone()
+        flash(f'Compra registrada: +{cantidad} {art["nombre"]}.', 'success')
+        db.close()
+        return redirect(url_for('compras_bodega'))
+
+    articulos = db.execute(
+        "SELECT * FROM articulos_bodega WHERE activo=1 ORDER BY categoria, nombre"
+    ).fetchall()
+    compras = db.execute("""
+        SELECT cb.*, ab.nombre as art_nombre, ab.unidad as art_unidad
+        FROM compras_bodega cb
+        JOIN articulos_bodega ab ON ab.id = cb.articulo_id
+        ORDER BY cb.fecha DESC, cb.id DESC LIMIT 50
+    """).fetchall()
+    hoy = date.today().isoformat()
+    db.close()
+    return render_template('compras_bodega.html', articulos=articulos, compras=compras, hoy=hoy)
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 # Inicializar DB al arrancar (necesario para Gunicorn en Railway)
 try:

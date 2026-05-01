@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Compras Bodega{% endblock %}
+{% block page_title %}Compras — Bolsas, Cepillos y Accesorios{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- ── Formulario ─────────────────────────────────────────── -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-archive-fill me-1"></i>Registrar Compra</h6>
+        <form method="POST">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Artículo <span class="text-danger">*</span></label>
+            <select name="articulo_id" class="form-select form-select-sm" required>
+              <option value="">— Seleccionar —</option>
+              {% for art in articulos %}
+              <option value="{{ art['id'] }}">{{ art['nombre'] }} (stock: {{ art['stock_actual'] }} {{ art['unidad'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Cantidad <span class="text-danger">*</span></label>
+            <input type="number" name="cantidad" class="form-control form-control-sm" min="1" required placeholder="Unidades compradas">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Fecha <span class="text-danger">*</span></label>
+            <input type="date" name="fecha" class="form-control form-control-sm" value="{{ hoy }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Proveedor</label>
+            <input type="text" name="proveedor" class="form-control form-control-sm" placeholder="Nombre del proveedor">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Precio Unitario</label>
+              <input type="number" name="precio_unitario" class="form-control form-control-sm" step="0.01" placeholder="$ por unidad">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Precio Total</label>
+              <input type="number" name="precio_total" class="form-control form-control-sm" step="0.01" placeholder="$ total">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Nº Factura / Remisión</label>
+            <input type="text" name="numero_factura" class="form-control form-control-sm" placeholder="Opcional">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Observaciones</label>
+            <textarea name="observaciones" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm w-100">
+            <i class="bi bi-check-circle me-1"></i>Registrar Compra
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Stock actual rápido -->
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title mb-2"><i class="bi bi-box-seam me-1"></i>Stock actual</h6>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr><th>Artículo</th><th>Categoría</th><th class="text-end">Stock</th></tr>
+            </thead>
+            <tbody>
+              {% for art in articulos %}
+              <tr class="{{ 'stock-bajo' if art['stock_actual'] <= art['stock_minimo'] else '' }}">
+                <td style="font-size:.82rem">{{ art['nombre'] }}</td>
+                <td><span class="badge bg-secondary" style="font-size:.7rem">{{ art['categoria'] }}</span></td>
+                <td class="text-end fw-semibold">{{ art['stock_actual'] }} <small class="text-muted">{{ art['unidad'] }}</small></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Historial de compras ───────────────────────────────── -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="px-3 py-2 border-bottom d-flex align-items-center justify-content-between">
+          <h6 class="mb-0">Últimas 50 compras de bodega</h6>
+          {% set total_mes = namespace(v=0) %}
+          {% for c in compras %}{% if c['precio_total'] %}{% set total_mes.v = total_mes.v + c['precio_total'] %}{% endif %}{% endfor %}
+          {% if total_mes.v > 0 %}
+          <span class="badge bg-success">Total mostrado: ${{ '{:,.0f}'.format(total_mes.v) }}</span>
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Artículo</th>
+                <th>Cant.</th>
+                <th>Proveedor</th>
+                <th>Factura</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in compras %}
+              <tr>
+                <td style="font-size:.82rem">{{ c['fecha'] }}</td>
+                <td style="font-size:.82rem">{{ c['art_nombre'] }}</td>
+                <td><strong>{{ c['cantidad'] }}</strong> <small class="text-muted">{{ c['art_unidad'] }}</small></td>
+                <td style="font-size:.82rem" class="text-muted">{{ c['proveedor'] or '—' }}</td>
+                <td style="font-size:.78rem" class="text-muted">{{ c['numero_factura'] or '—' }}</td>
+                <td class="text-end">
+                  {% if c['precio_total'] %}
+                    <strong>${{ '{:,.0f}'.format(c['precio_total']) }}</strong>
+                  {% else %}—{% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center py-4 text-muted">Sin compras registradas</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
