@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+{% block title %}Gestión de Usuarios{% endblock %}
+{% block page_title %}Gestión de Usuarios{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- ── Formulario nuevo usuario ──────────────────────────── -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-person-plus-fill me-1"></i>Agregar Usuario</h6>
+        <form method="POST">
+          <input type="hidden" name="accion" value="nuevo">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Nombre completo <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control form-control-sm" placeholder="Ej: Juan Pérez" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Usuario (login) <span class="text-danger">*</span></label>
+            <input type="text" name="username" class="form-control form-control-sm" placeholder="Ej: juanp" required>
+            <small class="text-muted">Sin espacios, en minúscula</small>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Contraseña <span class="text-danger">*</span></label>
+            <input type="text" name="password" class="form-control form-control-sm" placeholder="Mínimo 6 caracteres" required minlength="6">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Rol <span class="text-danger">*</span></label>
+            <select name="rol" class="form-select form-select-sm" required>
+              <option value="viewer">Visor — solo puede ver</option>
+              <option value="admin">Administrador — puede modificar todo</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm w-100">
+            <i class="bi bi-check-circle me-1"></i>Crear usuario
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Explicación de roles -->
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title mb-2"><i class="bi bi-shield-half me-1"></i>Roles del sistema</h6>
+        <div class="mb-2 p-2 rounded" style="background:#fef3c7">
+          <div class="fw-semibold" style="font-size:.82rem;color:#92400e">
+            <i class="bi bi-star-fill me-1"></i>Administrador
+          </div>
+          <small class="text-muted">Puede ver y registrar lotes, compras, entradas/salidas, ajustar stock y gestionar usuarios.</small>
+        </div>
+        <div class="p-2 rounded" style="background:#f0f9ff">
+          <div class="fw-semibold" style="font-size:.82rem;color:#0369a1">
+            <i class="bi bi-eye-fill me-1"></i>Visor
+          </div>
+          <small class="text-muted">Solo puede consultar el inventario, producción y reportes. No puede modificar nada.</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Lista de usuarios ─────────────────────────────────── -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="px-3 py-2 border-bottom">
+          <h6 class="mb-0">Usuarios registrados</h6>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Usuario</th>
+                <th>Rol</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for u in usuarios %}
+              <tr>
+                <td class="fw-semibold">{{ u['nombre'] }}</td>
+                <td><code>{{ u['username'] }}</code></td>
+                <td>
+                  {% if u['rol'] == 'admin' %}
+                    <span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">
+                      <i class="bi bi-star-fill me-1"></i>Admin
+                    </span>
+                  {% else %}
+                    <span class="badge bg-light text-secondary border">
+                      <i class="bi bi-eye me-1"></i>Visor
+                    </span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if u['activo'] %}
+                    <span class="badge bg-success">Activo</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactivo</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="d-flex gap-1">
+                    <!-- Toggle activo -->
+                    {% if u['id'] != session.get('user_id') %}
+                    <form method="POST" style="display:inline">
+                      <input type="hidden" name="accion" value="toggle">
+                      <input type="hidden" name="usuario_id" value="{{ u['id'] }}">
+                      <button class="btn btn-sm {{ 'btn-outline-danger' if u['activo'] else 'btn-outline-success' }}" style="font-size:.75rem;padding:2px 8px"
+                              title="{{ 'Desactivar' if u['activo'] else 'Activar' }}">
+                        <i class="bi {{ 'bi-person-x' if u['activo'] else 'bi-person-check' }}"></i>
+                        {{ 'Desactivar' if u['activo'] else 'Activar' }}
+                      </button>
+                    </form>
+                    {% endif %}
+                    <!-- Cambiar contraseña -->
+                    <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;padding:2px 8px"
+                            data-bs-toggle="modal" data-bs-target="#modalPw{{ u['id'] }}">
+                      <i class="bi bi-key"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Modal cambiar contraseña -->
+              <div class="modal fade" id="modalPw{{ u['id'] }}" tabindex="-1">
+                <div class="modal-dialog modal-sm">
+                  <div class="modal-content">
+                    <div class="modal-header py-2">
+                      <h6 class="modal-title">Cambiar contraseña — {{ u['nombre'] }}</h6>
+                      <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form method="POST">
+                      <div class="modal-body">
+                        <input type="hidden" name="accion" value="cambiar_password">
+                        <input type="hidden" name="usuario_id" value="{{ u['id'] }}">
+                        <label class="form-label small fw-semibold">Nueva contraseña</label>
+                        <input type="text" name="nueva_password" class="form-control form-control-sm" required minlength="6">
+                      </div>
+                      <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -296,8 +296,11 @@
     <a href="/reportes" class="nav-link-item {% if '/reportes' in request.path %}active{% endif %}">
       <i class="bi bi-bar-chart-line"></i><span class="link-text">Reportes</span>
     </a>
-    <a href="/admin/estado" class="nav-link-item {% if '/admin' in request.path %}active{% endif %}">
+    <a href="/admin/estado" class="nav-link-item {% if request.path == '/admin/estado' %}active{% endif %}">
       <i class="bi bi-shield-check"></i><span class="link-text">Estado y Respaldo</span>
+    </a>
+    <a href="/admin/usuarios" class="nav-link-item {% if '/admin/usuarios' in request.path %}active{% endif %}">
+      <i class="bi bi-people-fill"></i><span class="link-text">Usuarios</span>
     </a>
   </nav>
 
@@ -323,9 +326,28 @@
 
     <h4>{% block page_title %}Inicio{% endblock %}</h4>
 
-    <span class="topbar-date">
+    <span class="topbar-date d-none d-sm-inline">
       <i class="bi bi-calendar3 me-1"></i>{{ now.strftime('%d/%m/%Y') if now else '' }}
     </span>
+
+    <!-- Usuario actual -->
+    <div class="d-flex align-items-center gap-2 ms-2">
+      {% if session.get('rol') == 'admin' %}
+        <span class="badge d-none d-md-inline" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-size:.7rem">
+          <i class="bi bi-star-fill me-1"></i>Admin
+        </span>
+      {% else %}
+        <span class="badge d-none d-md-inline bg-light text-secondary border" style="font-size:.7rem">
+          <i class="bi bi-eye me-1"></i>Visor
+        </span>
+      {% endif %}
+      <span class="d-none d-md-inline" style="font-size:.82rem;color:#475569;font-weight:500">
+        {{ session.get('nombre','') }}
+      </span>
+      <a href="/logout" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;padding:3px 10px" title="Cerrar sesión">
+        <i class="bi bi-box-arrow-right"></i>
+      </a>
+    </div>
   </div>
 
   <div class="content-area">

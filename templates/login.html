@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EasyClean Pro — Iniciar Sesión</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(135deg, #1c20c4 0%, #1616a8 55%, #0ea5e9 100%);
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 1rem;
+    }
+
+    .login-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.25);
+    }
+
+    /* Logo */
+    .login-logo { text-align: center; margin-bottom: 1.75rem; }
+    .logo-easy  { font-size: 2.8rem; font-weight: 800; color: #1c20c4; letter-spacing: -0.04em; line-height: 1; }
+    .logo-row2  { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 3px; }
+    .logo-clean { font-size: 2.2rem; font-weight: 700; color: #1c20c4; letter-spacing: -0.02em; }
+    .logo-pro   {
+      font-size: .75rem; font-weight: 700; color: #1c20c4;
+      border: 2px solid #1c20c4; border-radius: 20px;
+      padding: 3px 9px; letter-spacing: .07em;
+    }
+    .login-subtitle {
+      text-align: center;
+      color: #64748b;
+      font-size: .85rem;
+      margin-top: .5rem;
+      margin-bottom: 0;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #e2e8f0;
+      margin: 1.5rem 0;
+    }
+
+    .form-label { font-size: .85rem; font-weight: 600; color: #374151; }
+    .form-control {
+      border-radius: 10px;
+      border: 1.5px solid #e2e8f0;
+      padding: .65rem .9rem;
+      font-size: .92rem;
+      transition: border-color .15s;
+    }
+    .form-control:focus {
+      border-color: #1c20c4;
+      box-shadow: 0 0 0 3px rgba(28,32,196,.12);
+    }
+    .input-group-text {
+      background: #f8faff;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px 0 0 10px;
+      color: #94a3b8;
+    }
+    .input-group .form-control { border-radius: 0 10px 10px 0; }
+    .input-group .form-control:focus { z-index: 3; }
+
+    .btn-login {
+      background: linear-gradient(135deg, #1c20c4, #0ea5e9);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-weight: 600;
+      font-size: .95rem;
+      padding: .7rem;
+      width: 100%;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn-login:hover { opacity: .92; transform: translateY(-1px); color: #fff; }
+    .btn-login:active { transform: translateY(0); }
+
+    .login-footer {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: #94a3b8;
+      font-size: .75rem;
+    }
+
+    @media (max-width: 480px) {
+      .login-card { padding: 2rem 1.25rem; }
+      .logo-easy { font-size: 2.2rem; }
+      .logo-clean { font-size: 1.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-card">
+
+  <!-- Logo -->
+  <div class="login-logo">
+    <div class="logo-easy">easy</div>
+    <div class="logo-row2">
+      <span class="logo-clean">Clean</span>
+      <span class="logo-pro">PRO</span>
+    </div>
+    <p class="login-subtitle mt-2">Sistema de Inventario</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Mensajes flash -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} py-2 mb-3" style="font-size:.85rem;border-radius:10px">
+        <i class="bi bi-exclamation-circle me-1"></i>{{ msg }}
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- Formulario -->
+  <form method="POST" autocomplete="on">
+    <div class="mb-3">
+      <label class="form-label">Usuario</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-person"></i></span>
+        <input type="text" name="username" class="form-control" placeholder="Tu usuario"
+               autocomplete="username" required autofocus>
+      </div>
+    </div>
+    <div class="mb-4">
+      <label class="form-label">Contraseña</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+        <input type="password" name="password" class="form-control" placeholder="••••••••"
+               autocomplete="current-password" required>
+      </div>
+    </div>
+    <button type="submit" class="btn-login">
+      <i class="bi bi-box-arrow-in-right me-2"></i>Ingresar
+    </button>
+  </form>
+
+  <p class="login-footer">
+    <i class="bi bi-shield-lock me-1"></i>Acceso restringido — solo personal autorizado
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

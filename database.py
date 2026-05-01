@@ -268,6 +268,15 @@ SCHEMA_SQLITE = '''
         nombre TEXT NOT NULL UNIQUE,
         aplicado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        nombre TEXT NOT NULL,
+        rol TEXT DEFAULT 'viewer',
+        activo INTEGER DEFAULT 1,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 '''
 
 SCHEMA_PG = '''
@@ -406,6 +415,15 @@ SCHEMA_PG = '''
         nombre TEXT NOT NULL UNIQUE,
         aplicado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        nombre TEXT NOT NULL,
+        rol TEXT DEFAULT 'viewer',
+        activo INTEGER DEFAULT 1,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 '''
 
 # ─── Migraciones de datos ────────────────────────────────────────────────────
@@ -532,6 +550,16 @@ def _mig_v002_articulos_bodega(db):
                 (nombre, cat, unidad, 0, minimo)
             )
 
+def _mig_v003_usuarios(db):
+    """Crea el usuario administrador inicial."""
+    from werkzeug.security import generate_password_hash
+    existe = db.execute("SELECT id FROM usuarios WHERE username=?", ('admin',)).fetchone()
+    if not existe:
+        db.execute(
+            "INSERT INTO usuarios (username, password_hash, nombre, rol) VALUES (?,?,?,?)",
+            ('admin', generate_password_hash('EasyClean2025!'), 'Administrador', 'admin')
+        )
+
 # ─── Lista maestra de migraciones ────────────────────────────────────────────
 # Para agregar cambios futuros: añadir una nueva tupla al final de esta lista.
 # NUNCA modificar ni eliminar las entradas existentes.
@@ -539,6 +567,7 @@ def _mig_v002_articulos_bodega(db):
 MIGRACIONES = [
     ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
     ('v002_articulos_bodega', _mig_v002_articulos_bodega),
+    ('v003_usuarios',         _mig_v003_usuarios),
 ]
 
 # ─── Inicialización ───────────────────────────────────────────────────────────

@@ -1,15 +1,110 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from database import get_db, init_db
 from datetime import datetime, date, timedelta
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import os
 
 app = Flask(__name__)
-app.secret_key = 'easyclean_pro_2025'
+app.secret_key = 'easyclean_pro_2025_seguro'
+
+# ─── Autenticación ────────────────────────────────────────────────────────────
+
+@app.before_request
+def verificar_sesion():
+    rutas_publicas = {'login', 'static'}
+    if request.endpoint and request.endpoint not in rutas_publicas:
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('rol') != 'admin':
+            flash('No tienes permisos para realizar esta acción.', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+def es_admin():
+    return session.get('rol') == 'admin'
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        username = request.form['username'].strip().lower()
+        password = request.form['password']
+        db = get_db()
+        user = db.execute(
+            "SELECT * FROM usuarios WHERE username=? AND activo=1", (username,)
+        ).fetchone()
+        db.close()
+        if user and check_password_hash(user['password_hash'], password):
+            session.permanent = True
+            session['user_id']  = user['id']
+            session['username'] = user['username']
+            session['nombre']   = user['nombre']
+            session['rol']      = user['rol']
+            return redirect(url_for('dashboard'))
+        flash('Usuario o contraseña incorrectos.', 'danger')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ─── Gestión de usuarios (solo admin) ─────────────────────────────────────────
+
+@app.route('/admin/usuarios', methods=['GET', 'POST'])
+@admin_required
+def admin_usuarios():
+    db = get_db()
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+        if accion == 'nuevo':
+            username = request.form['username'].strip().lower()
+            nombre   = request.form['nombre'].strip()
+            password = request.form['password']
+            rol      = request.form.get('rol', 'viewer')
+            existe = db.execute("SELECT id FROM usuarios WHERE username=?", (username,)).fetchone()
+            if existe:
+                flash(f'El usuario "{username}" ya existe.', 'warning')
+            else:
+                db.execute(
+                    "INSERT INTO usuarios (username, password_hash, nombre, rol) VALUES (?,?,?,?)",
+                    (username, generate_password_hash(password), nombre, rol)
+                )
+                db.commit()
+                flash(f'Usuario "{username}" creado correctamente.', 'success')
+        elif accion == 'toggle':
+            uid = request.form['usuario_id']
+            if int(uid) == session['user_id']:
+                flash('No puedes desactivar tu propia cuenta.', 'warning')
+            else:
+                db.execute("UPDATE usuarios SET activo = 1 - activo WHERE id=?", (uid,))
+                db.commit()
+                flash('Estado del usuario actualizado.', 'info')
+        elif accion == 'cambiar_password':
+            uid       = request.form['usuario_id']
+            nueva_pw  = request.form['nueva_password']
+            db.execute("UPDATE usuarios SET password_hash=? WHERE id=?",
+                       (generate_password_hash(nueva_pw), uid))
+            db.commit()
+            flash('Contraseña actualizada.', 'success')
+        db.close()
+        return redirect(url_for('admin_usuarios'))
+
+    usuarios = db.execute("SELECT * FROM usuarios ORDER BY rol DESC, nombre").fetchall()
+    db.close()
+    return render_template('admin_usuarios.html', usuarios=usuarios)
 
 @app.context_processor
 def inject_now():
-    return {'now': datetime.now()}
+    return {'now': datetime.now(), 'session': session}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -151,6 +246,10 @@ def produccion_lista():
 def produccion_nueva():
     db = get_db()
     if request.method == 'POST':
+        if not es_admin():
+            flash('Solo los administradores pueden registrar lotes.', 'danger')
+            db.close()
+            return redirect(url_for('produccion_nueva'))
         producto_id = int(request.form['producto_id'])
         fecha = request.form['fecha_produccion']
         hora_inicio = request.form.get('hora_inicio', '')
@@ -275,6 +374,7 @@ def inventario_mp():
     return render_template('inventario_mp.html', mps=mps)
 
 @app.route('/inventario/mp/ajuste', methods=['POST'])
+@admin_required
 def ajuste_mp():
     db = get_db()
     mp_id = request.form['mp_id']
@@ -286,6 +386,7 @@ def ajuste_mp():
     return redirect(url_for('inventario_mp'))
 
 @app.route('/inventario/mp/nueva', methods=['POST'])
+@admin_required
 def nueva_mp():
     db = get_db()
     nombre = request.form['nombre']
@@ -313,6 +414,7 @@ def inventario_empaques():
     return render_template('inventario_empaques.html', empaques=empaques, productos=productos)
 
 @app.route('/inventario/empaques/ajuste', methods=['POST'])
+@admin_required
 def ajuste_empaque():
     db = get_db()
     emp_id = request.form['emp_id']
@@ -324,6 +426,7 @@ def ajuste_empaque():
     return redirect(url_for('inventario_empaques'))
 
 @app.route('/inventario/empaques/nuevo', methods=['POST'])
+@admin_required
 def nuevo_empaque():
     db = get_db()
     nombre = request.form['nombre']
@@ -342,6 +445,10 @@ def nuevo_empaque():
 def compras_mp():
     db = get_db()
     if request.method == 'POST':
+        if not es_admin():
+            flash('Solo los administradores pueden registrar compras.', 'danger')
+            db.close()
+            return redirect(url_for('compras_mp'))
         mp_id = request.form['materia_prima_id']
         fecha = request.form['fecha']
         cantidad = float(request.form['cantidad'])
@@ -381,6 +488,10 @@ def compras_mp():
 def compras_empaques():
     db = get_db()
     if request.method == 'POST':
+        if not es_admin():
+            flash('Solo los administradores pueden registrar compras.', 'danger')
+            db.close()
+            return redirect(url_for('compras_empaques'))
         emp_id = request.form['tipo_empaque_id']
         fecha = request.form['fecha']
         cantidad = int(request.form['cantidad'])
@@ -423,6 +534,10 @@ def compras_empaques():
 def operarios():
     db = get_db()
     if request.method == 'POST':
+        if not es_admin():
+            flash('Solo los administradores pueden modificar operarios.', 'danger')
+            db.close()
+            return redirect(url_for('operarios'))
         accion = request.form.get('accion')
         if accion == 'nuevo':
             db.execute("INSERT INTO operarios (nombre, cedula, cargo) VALUES (?,?,?)",
@@ -502,6 +617,7 @@ def productos_lista():
                            producto_formulas=producto_formulas, mps=mps)
 
 @app.route('/productos/nuevo', methods=['POST'])
+@admin_required
 def producto_nuevo():
     db = get_db()
     nombre = request.form['nombre'].strip()
@@ -536,6 +652,7 @@ def producto_nuevo():
     return redirect(url_for('productos_lista'))
 
 @app.route('/productos/<int:prod_id>/ingrediente/agregar', methods=['POST'])
+@admin_required
 def agregar_ingrediente(prod_id):
     db = get_db()
     mp_id = request.form['mp_id']
@@ -561,6 +678,7 @@ def agregar_ingrediente(prod_id):
     return redirect(url_for('productos_lista'))
 
 @app.route('/productos/<int:prod_id>/ingrediente/<int:ing_id>/eliminar', methods=['POST'])
+@admin_required
 def eliminar_ingrediente(prod_id, ing_id):
     db = get_db()
     db.execute("DELETE FROM formula_ingredientes WHERE id=? AND producto_id=?", (ing_id, prod_id))
@@ -570,6 +688,7 @@ def eliminar_ingrediente(prod_id, ing_id):
     return redirect(url_for('productos_lista'))
 
 @app.route('/productos/<int:prod_id>/editar', methods=['POST'])
+@admin_required
 def editar_producto(prod_id):
     db = get_db()
     db.execute("""
@@ -627,6 +746,7 @@ def bodega():
                            cat_filtro=cat, hoy=hoy)
 
 @app.route('/bodega/articulo/nuevo', methods=['POST'])
+@admin_required
 def bodega_articulo_nuevo():
     db = get_db()
     db.execute("""
@@ -646,6 +766,7 @@ def bodega_articulo_nuevo():
     return redirect(url_for('bodega'))
 
 @app.route('/bodega/entrada', methods=['POST'])
+@admin_required
 def bodega_entrada():
     db = get_db()
     art_id  = int(request.form['articulo_id'])
@@ -668,6 +789,7 @@ def bodega_entrada():
     return redirect(url_for('bodega'))
 
 @app.route('/bodega/salida', methods=['POST'])
+@admin_required
 def bodega_salida():
     db = get_db()
     art_id  = int(request.form['articulo_id'])
@@ -694,6 +816,7 @@ def bodega_salida():
     return redirect(url_for('bodega'))
 
 @app.route('/bodega/ajuste', methods=['POST'])
+@admin_required
 def bodega_ajuste():
     db = get_db()
     art_id = int(request.form['articulo_id'])
@@ -710,6 +833,10 @@ def bodega_ajuste():
 def compras_bodega():
     db = get_db()
     if request.method == 'POST':
+        if not es_admin():
+            flash('Solo los administradores pueden registrar compras.', 'danger')
+            db.close()
+            return redirect(url_for('compras_bodega'))
         art_id   = int(request.form['articulo_id'])
         fecha    = request.form['fecha']
         cantidad = int(request.form['cantidad'])
