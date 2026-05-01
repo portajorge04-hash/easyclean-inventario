@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block title %}Estado del Sistema{% endblock %}
+{% block page_title %}Estado y Respaldo de Datos{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- ── Estado de la BD ──────────────────────────────────────── -->
+  <div class="col-12">
+    <div class="card border-0" style="border-left: 4px solid {{ '#0d9488' if ok else '#dc2626' }} !important;">
+      <div class="card-body d-flex align-items-center gap-3">
+        {% if ok %}
+          <i class="bi bi-check-circle-fill text-success" style="font-size:2rem"></i>
+          <div>
+            <h5 class="mb-0 text-success">Base de datos conectada correctamente</h5>
+            <small class="text-muted">Neon PostgreSQL (producción) — todos los datos están seguros</small>
+          </div>
+        {% else %}
+          <i class="bi bi-x-circle-fill text-danger" style="font-size:2rem"></i>
+          <div>
+            <h5 class="mb-0 text-danger">Error de conexión a la base de datos</h5>
+            <small class="text-muted">Verificar la variable DATABASE_URL en Railway</small>
+          </div>
+        {% endif %}
+        <div class="ms-auto">
+          <a href="/admin/exportar" class="btn btn-primary btn-sm">
+            <i class="bi bi-download me-1"></i>Descargar Respaldo (JSON)
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Conteo de registros ──────────────────────────────────── -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-table me-1"></i>Registros en la base de datos</h6>
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr><th>Tabla</th><th class="text-end">Registros</th><th class="text-end">Estado</th></tr>
+          </thead>
+          <tbody>
+            {% set nombres = {
+              'productos': 'Productos',
+              'materias_primas': 'Materias Primas',
+              'lotes_produccion': 'Lotes de Producción',
+              'compras_mp': 'Compras MP',
+              'compras_empaque': 'Compras Empaques',
+              'compras_bodega': 'Compras Bodega',
+              'articulos_bodega': 'Artículos de Bodega',
+              'movimientos_bodega': 'Movimientos Bodega',
+              'operarios': 'Operarios'
+            } %}
+            {% for clave, cantidad in tablas.items() %}
+            <tr>
+              <td style="font-size:.85rem">{{ nombres.get(clave, clave) }}</td>
+              <td class="text-end fw-bold">{{ cantidad }}</td>
+              <td class="text-end">
+                {% if cantidad > 0 %}
+                  <span class="badge bg-success">OK</span>
+                {% else %}
+                  <span class="badge bg-secondary">Vacío</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Migraciones aplicadas ─────────────────────────────────── -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-journal-check me-1"></i>Migraciones registradas</h6>
+        <p class="text-muted small mb-3">
+          Cada migración se ejecuta <strong>una sola vez</strong>. Si aparece aquí, los datos ya están protegidos
+          contra duplicados y borrados en futuros deploys.
+        </p>
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr><th>Nombre</th><th>Aplicada el</th></tr>
+          </thead>
+          <tbody>
+            {% for m in migraciones %}
+            <tr>
+              <td><code style="font-size:.8rem">{{ m['nombre'] }}</code></td>
+              <td style="font-size:.8rem" class="text-muted">{{ m['aplicado_en'][:19] if m['aplicado_en'] else '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" class="text-center text-muted py-3">Sin migraciones registradas</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Instrucciones de respaldo -->
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title mb-2"><i class="bi bi-shield-check me-1"></i>Guía de respaldo</h6>
+        <ol class="small text-muted mb-0" style="padding-left:1.2rem">
+          <li class="mb-1">Haz clic en <strong>Descargar Respaldo (JSON)</strong> para guardar todos los datos.</li>
+          <li class="mb-1">Guarda el archivo en Google Drive o en tu PC.</li>
+          <li class="mb-1">Recomendado: hacer respaldo <strong>una vez por semana</strong>.</li>
+          <li>Si algo falla, el archivo JSON contiene todos los lotes, compras, movimientos y stocks.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cómo funciona la protección ──────────────────────────── -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-lock-fill me-1 text-success"></i>Cómo están protegidos los datos</h6>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <div class="p-3 rounded" style="background:#f0fdf4">
+              <div class="fw-semibold mb-1" style="color:#166534"><i class="bi bi-database-check me-1"></i>Base de datos separada</div>
+              <small class="text-muted">Los datos están en Neon PostgreSQL, completamente separado del servidor Railway. Un nuevo deploy de código <strong>nunca toca</strong> la base de datos.</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="p-3 rounded" style="background:#f0fdf4">
+              <div class="fw-semibold mb-1" style="color:#166534"><i class="bi bi-arrow-repeat me-1"></i>Migraciones controladas</div>
+              <small class="text-muted">Cada cambio de estructura se registra. Si ya se aplicó, nunca se ejecuta de nuevo. Imposible duplicar o borrar datos por un deploy.</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="p-3 rounded" style="background:#f0fdf4">
+              <div class="fw-semibold mb-1" style="color:#166534"><i class="bi bi-plus-circle me-1"></i>Solo se agregan tablas</div>
+              <small class="text-muted">El código nunca ejecuta DROP TABLE ni TRUNCATE. Las tablas nuevas se crean con IF NOT EXISTS, sin afectar las existentes.</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="p-3 rounded" style="background:#f0fdf4">
+              <div class="fw-semibold mb-1" style="color:#166534"><i class="bi bi-download me-1"></i>Respaldo descargable</div>
+              <small class="text-muted">En cualquier momento puedes descargar un JSON con todo el historial: lotes, compras, movimientos y stocks actuales.</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

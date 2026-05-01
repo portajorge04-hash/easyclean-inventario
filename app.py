@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from database import get_db, init_db
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
 import os
 
@@ -65,6 +65,7 @@ def dashboard():
     db = get_db()
     productos = db.execute("SELECT * FROM productos").fetchall()
 
+    mes_actual = datetime.now().strftime('%Y-%m')
     stats = {}
     for p in productos:
         ultimo = db.execute(
@@ -72,8 +73,8 @@ def dashboard():
             (p['id'],)
         ).fetchone()
         total_mes = db.execute(
-            "SELECT COALESCE(SUM(unidades_producidas),0) as total FROM lotes_produccion WHERE producto_id=? AND strftime('%Y-%m', fecha_produccion)=strftime('%Y-%m','now')",
-            (p['id'],)
+            "SELECT COALESCE(SUM(unidades_producidas),0) as total FROM lotes_produccion WHERE producto_id=? AND substr(fecha_produccion, 1, 7)=?",
+            (p['id'], mes_actual)
         ).fetchone()['total']
         stats[p['id']] = {'ultimo': ultimo, 'total_mes': total_mes}
 
@@ -93,14 +94,15 @@ def dashboard():
     """).fetchall()
 
     # Producción últimos 7 días para gráfico
+    hace_7 = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
     datos_grafico = db.execute("""
         SELECT fecha_produccion, p.nombre as producto,
                SUM(unidades_producidas) as total
         FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
-        WHERE fecha_produccion >= date('now','-7 days')
+        WHERE fecha_produccion >= ?
         GROUP BY fecha_produccion, producto_id
         ORDER BY fecha_produccion
-    """).fetchall()
+    """, (hace_7,)).fetchall()
 
     db.close()
     return render_template('dashboard.html',
@@ -451,7 +453,7 @@ def reportes():
                SUM(lp.unidades_producidas) as total_unidades,
                SUM(lp.unidades_ingresadas) as total_ingresadas
         FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
-        WHERE strftime('%Y-%m', lp.fecha_produccion)=?
+        WHERE substr(lp.fecha_produccion, 1, 7)=?
         GROUP BY lp.producto_id
     """, (mes,)).fetchall()
 
@@ -460,7 +462,7 @@ def reportes():
         FROM lote_consumo_mp lc
         JOIN materias_primas mp ON mp.id=lc.materia_prima_id
         JOIN lotes_produccion lp ON lp.id=lc.lote_id
-        WHERE strftime('%Y-%m', lp.fecha_produccion)=?
+        WHERE substr(lp.fecha_produccion, 1, 7)=?
         GROUP BY lc.materia_prima_id, lc.unidad
         ORDER BY total DESC
     """, (mes,)).fetchall()
@@ -469,7 +471,7 @@ def reportes():
         SELECT mp.nombre, SUM(c.cantidad) as total, c.unidad,
                SUM(c.precio_total) as costo
         FROM compras_mp c JOIN materias_primas mp ON mp.id=c.materia_prima_id
-        WHERE strftime('%Y-%m', c.fecha)=?
+        WHERE substr(c.fecha, 1, 7)=?
         GROUP BY c.materia_prima_id
     """, (mes,)).fetchall()
 
@@ -749,6 +751,90 @@ def compras_bodega():
     hoy = date.today().isoformat()
     db.close()
     return render_template('compras_bodega.html', articulos=articulos, compras=compras, hoy=hoy)
+
+# ─── Admin / Respaldo ─────────────────────────────────────────────────────────
+
+@app.route('/admin/estado')
+def admin_estado():
+    db = get_db()
+    try:
+        tablas = {
+            'productos':          db.execute("SELECT COUNT(*) as n FROM productos").fetchone()['n'],
+            'materias_primas':    db.execute("SELECT COUNT(*) as n FROM materias_primas").fetchone()['n'],
+            'lotes_produccion':   db.execute("SELECT COUNT(*) as n FROM lotes_produccion").fetchone()['n'],
+            'compras_mp':         db.execute("SELECT COUNT(*) as n FROM compras_mp").fetchone()['n'],
+            'compras_empaque':    db.execute("SELECT COUNT(*) as n FROM compras_empaque").fetchone()['n'],
+            'compras_bodega':     db.execute("SELECT COUNT(*) as n FROM compras_bodega").fetchone()['n'],
+            'articulos_bodega':   db.execute("SELECT COUNT(*) as n FROM articulos_bodega").fetchone()['n'],
+            'movimientos_bodega': db.execute("SELECT COUNT(*) as n FROM movimientos_bodega").fetchone()['n'],
+            'operarios':          db.execute("SELECT COUNT(*) as n FROM operarios").fetchone()['n'],
+        }
+        migraciones = db.execute(
+            "SELECT nombre, aplicado_en FROM schema_migrations ORDER BY id"
+        ).fetchall()
+        ok = True
+    except Exception as e:
+        tablas = {}
+        migraciones = []
+        ok = False
+    db.close()
+    return render_template('admin_estado.html', tablas=tablas, migraciones=migraciones, ok=ok)
+
+@app.route('/admin/exportar')
+def admin_exportar():
+    db = get_db()
+    def rows(query, params=()):
+        return [dict(zip(r.keys(), r)) for r in db.execute(query, params).fetchall()]
+
+    datos = {
+        'exportado_en': datetime.now().isoformat(),
+        'version': 'EasyClean Pro v1',
+        'lotes_produccion': rows("""
+            SELECT lp.*, p.nombre as producto_nombre
+            FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
+            ORDER BY lp.id
+        """),
+        'compras_mp': rows("""
+            SELECT c.*, mp.nombre as mp_nombre
+            FROM compras_mp c JOIN materias_primas mp ON mp.id=c.materia_prima_id
+            ORDER BY c.id
+        """),
+        'compras_empaque': rows("""
+            SELECT c.*, te.nombre as empaque_nombre
+            FROM compras_empaque c JOIN tipos_empaque te ON te.id=c.tipo_empaque_id
+            ORDER BY c.id
+        """),
+        'compras_bodega': rows("""
+            SELECT cb.*, ab.nombre as articulo_nombre
+            FROM compras_bodega cb JOIN articulos_bodega ab ON ab.id=cb.articulo_id
+            ORDER BY cb.id
+        """),
+        'movimientos_bodega': rows("""
+            SELECT m.*, a.nombre as articulo_nombre
+            FROM movimientos_bodega m JOIN articulos_bodega a ON a.id=m.articulo_id
+            ORDER BY m.id
+        """),
+        'stock_materias_primas': rows(
+            "SELECT id, nombre, unidad, stock_actual, stock_minimo, activo FROM materias_primas ORDER BY nombre"
+        ),
+        'stock_empaques': rows("""
+            SELECT te.id, te.nombre, te.stock_actual, te.stock_minimo, p.nombre as producto
+            FROM tipos_empaque te LEFT JOIN productos p ON p.id=te.producto_id ORDER BY te.nombre
+        """),
+        'stock_bodega': rows(
+            "SELECT id, nombre, categoria, unidad, stock_actual, stock_minimo FROM articulos_bodega WHERE activo=1 ORDER BY nombre"
+        ),
+        'operarios': rows("SELECT id, nombre, cedula, cargo, activo FROM operarios ORDER BY nombre"),
+    }
+    db.close()
+
+    nombre_archivo = f'easyclean_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+    from flask import Response
+    return Response(
+        json.dumps(datos, ensure_ascii=False, indent=2, default=str),
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename={nombre_archivo}'}
+    )
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
 # Inicializar DB al arrancar (necesario para Gunicorn en Railway)
