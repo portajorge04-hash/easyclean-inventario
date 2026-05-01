@@ -263,6 +263,11 @@ SCHEMA_SQLITE = '''
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (articulo_id) REFERENCES articulos_bodega(id)
     );
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL UNIQUE,
+        aplicado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 '''
 
 SCHEMA_PG = '''
@@ -396,38 +401,37 @@ SCHEMA_PG = '''
         observaciones TEXT,
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL UNIQUE,
+        aplicado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 '''
 
-# ─── Inicialización ───────────────────────────────────────────────────────────
+# ─── Migraciones de datos ────────────────────────────────────────────────────
+# Cada migración se ejecuta UNA SOLA VEZ y queda registrada en schema_migrations.
+# Los datos ya cargados por el equipo NUNCA se borran ni se duplican.
 
-def init_db():
-    db = get_db()
+def _has_migration(db, nombre):
+    try:
+        row = db.execute(
+            "SELECT id FROM schema_migrations WHERE nombre=?", (nombre,)
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
 
-    # Crear tablas
-    schema = SCHEMA_PG if USE_PG else SCHEMA_SQLITE
-    for stmt in schema.split(';'):
-        stmt = stmt.strip()
-        if stmt:
-            try:
-                db.execute(stmt)
-            except Exception as e:
-                print(f'Schema warning: {e}')
+def _record_migration(db, nombre):
+    db.execute(
+        "INSERT OR IGNORE INTO schema_migrations (nombre) VALUES (?)", (nombre,)
+    )
 
-    db.commit()
+def _mig_v001_datos_iniciales(db):
+    """Productos, materias primas, fórmulas y empaques iniciales."""
+    n = db.execute("SELECT COUNT(*) as n FROM productos").fetchone()['n']
+    if n > 0:
+        return  # Ya hay datos, no tocar nada
 
-    # ── Seed: verificar si ya hay datos ──
-    n_prod = db.execute("SELECT COUNT(*) as n FROM productos").fetchone()['n']
-    if n_prod == 0:
-        _seed(db)
-
-    db.commit()
-    db.close()
-    print("Base de datos inicializada correctamente.")
-
-def _seed(db):
-    """Carga los datos iniciales de EasyClean Pro."""
-
-    # Productos
     db.executemany(
         "INSERT INTO productos (nombre, tamano_envase_ml, litros_por_lote, unidades_por_lote, descripcion, prefijo_lote) VALUES (?,?,?,?,?,?)",
         [
@@ -438,7 +442,6 @@ def _seed(db):
     )
     db.commit()
 
-    # Materias primas
     mps = [
         ('Sal', 'kg', 0, 5),
         ('LESS', 'kg', 0, 20),
@@ -461,21 +464,18 @@ def _seed(db):
     )
     db.commit()
 
-    # Obtener IDs
     prod_rows = db.execute("SELECT id, nombre FROM productos").fetchall()
-    mp_rows = db.execute("SELECT id, nombre FROM materias_primas").fetchall()
+    mp_rows   = db.execute("SELECT id, nombre FROM materias_primas").fetchall()
     prod = {r['nombre']: r['id'] for r in prod_rows}
-    mp = {r['nombre']: r['id'] for r in mp_rows}
+    mp   = {r['nombre']: r['id'] for r in mp_rows}
 
     formulas = [
-        # Suelas y Sintéticos
         (prod['Suelas y Sintéticos'], mp['Sal'], 2.17, 'kg'),
         (prod['Suelas y Sintéticos'], mp['LESS'], 17.38, 'kg'),
         (prod['Suelas y Sintéticos'], mp['Agua'], 54.27, 'kg'),
         (prod['Suelas y Sintéticos'], mp['DBL'], 6.19, 'kg'),
         (prod['Suelas y Sintéticos'], mp['Poliacrilato de Sodio'], 120, 'g'),
         (prod['Suelas y Sintéticos'], mp['Conservante'], 120, 'g'),
-        # Material Textil
         (prod['Material Textil'], mp['LESS @ 28%'], 7.91, 'kg'),
         (prod['Material Textil'], mp['Agua'], 58.90, 'kg'),
         (prod['Material Textil'], mp['Betaína'], 4.74, 'kg'),
@@ -485,7 +485,6 @@ def _seed(db):
         (prod['Material Textil'], mp['Conservante'], 158, 'g'),
         (prod['Material Textil'], mp['EDTA'], 160, 'g'),
         (prod['Material Textil'], mp['Poliacrilato de Sodio'], 77, 'g'),
-        # Icon White
         (prod['Icon White (Suelas Amarillas)'], mp['Peróxido de Hidrógeno al 50%'], 4.5, 'kg'),
         (prod['Icon White (Suelas Amarillas)'], mp['Glicerina'], 600, 'g'),
         (prod['Icon White (Suelas Amarillas)'], mp['Goma Xantan'], 450, 'g'),
@@ -514,20 +513,63 @@ def _seed(db):
     )
     db.commit()
 
-    # Artículos de bodega
+def _mig_v002_articulos_bodega(db):
+    """Artículos iniciales de bodega — solo inserta si no existen."""
     articulos = [
-        ('Bolsa de Kit', 'Bolsas', 'und', 0, 50),
-        ('Bolsa de Boutique', 'Bolsas', 'und', 0, 50),
-        ('Bolsa de Celofán', 'Bolsas', 'und', 0, 100),
-        ('Cepillo de Suelas', 'Cepillos', 'und', 0, 20),
-        ('Cepillo de Tela', 'Cepillos', 'und', 0, 20),
+        ('Bolsa de Kit',      'Bolsas',   'und', 50),
+        ('Bolsa de Boutique', 'Bolsas',   'und', 50),
+        ('Bolsa de Celofán',  'Bolsas',   'und', 100),
+        ('Cepillo de Suelas', 'Cepillos', 'und', 20),
+        ('Cepillo de Tela',   'Cepillos', 'und', 20),
     ]
-    db.executemany(
-        "INSERT INTO articulos_bodega (nombre, categoria, unidad, stock_actual, stock_minimo) VALUES (?,?,?,?,?)",
-        articulos
-    )
+    for nombre, cat, unidad, minimo in articulos:
+        existe = db.execute(
+            "SELECT id FROM articulos_bodega WHERE nombre=?", (nombre,)
+        ).fetchone()
+        if not existe:
+            db.execute(
+                "INSERT INTO articulos_bodega (nombre, categoria, unidad, stock_actual, stock_minimo) VALUES (?,?,?,?,?)",
+                (nombre, cat, unidad, 0, minimo)
+            )
+
+# ─── Lista maestra de migraciones ────────────────────────────────────────────
+# Para agregar cambios futuros: añadir una nueva tupla al final de esta lista.
+# NUNCA modificar ni eliminar las entradas existentes.
+
+MIGRACIONES = [
+    ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
+    ('v002_articulos_bodega', _mig_v002_articulos_bodega),
+]
+
+# ─── Inicialización ───────────────────────────────────────────────────────────
+
+def init_db():
+    db = get_db()
+
+    # 1. Crear / actualizar tablas (siempre seguro con IF NOT EXISTS)
+    schema = SCHEMA_PG if USE_PG else SCHEMA_SQLITE
+    for stmt in schema.split(';'):
+        stmt = stmt.strip()
+        if stmt:
+            try:
+                db.execute(stmt)
+            except Exception as e:
+                print(f'Schema warning: {e}')
     db.commit()
-    print("Datos iniciales cargados.")
+
+    # 2. Ejecutar solo las migraciones que aún no se han aplicado
+    for nombre, fn in MIGRACIONES:
+        if not _has_migration(db, nombre):
+            try:
+                fn(db)
+                _record_migration(db, nombre)
+                db.commit()
+                print(f'Migración aplicada: {nombre}')
+            except Exception as e:
+                print(f'Error en migración {nombre}: {e}')
+
+    db.close()
+    print("Base de datos inicializada correctamente.")
 
 if __name__ == '__main__':
     init_db()
