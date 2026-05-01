@@ -8,123 +8,281 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     :root {
-      --ec-blue: #1a3c5e;
-      --ec-teal: #0d9488;
-      --ec-accent: #f59e0b;
+      --ec-blue:    #1a3c5e;
+      --ec-teal:    #0d9488;
+      --ec-accent:  #f59e0b;
+      --sidebar-w:  240px;
+      --sidebar-sm: 64px;
     }
-    body { background: #f1f5f9; font-family: 'Segoe UI', sans-serif; }
+
+    * { box-sizing: border-box; }
+    body { background: #f1f5f9; font-family: 'Segoe UI', sans-serif; margin: 0; }
+
+    /* ── SIDEBAR ─────────────────────────────────────────── */
     .sidebar {
-      min-height: 100vh;
-      background: var(--ec-blue);
-      width: 240px;
       position: fixed;
       top: 0; left: 0;
-      z-index: 100;
+      height: 100dvh;
+      width: var(--sidebar-w);
+      background: var(--ec-blue);
       display: flex;
       flex-direction: column;
+      z-index: 1050;
+      transition: width .25s ease, transform .25s ease;
+      overflow: hidden;
     }
+
+    /* Marca */
     .sidebar-brand {
-      padding: 1.25rem 1rem;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 1rem 1.1rem;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      min-height: 64px;
+      white-space: nowrap;
     }
-    .sidebar-brand h5 { color: #fff; font-weight: 700; margin: 0; font-size: 1rem; }
-    .sidebar-brand small { color: var(--ec-accent); font-size: .75rem; }
-    .sidebar .nav-link {
-      color: rgba(255,255,255,0.75);
-      padding: .6rem 1.25rem;
-      border-radius: 6px;
-      margin: 2px 8px;
+    .sidebar-brand .brand-icon { font-size: 1.4rem; color: var(--ec-accent); flex-shrink: 0; }
+    .sidebar-brand .brand-text h5  { color: #fff; font-weight: 700; margin: 0; font-size: .95rem; }
+    .sidebar-brand .brand-text small { color: var(--ec-accent); font-size: .7rem; }
+
+    /* Nav */
+    .sidebar nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: .5rem 0; }
+    .sidebar nav::-webkit-scrollbar { width: 3px; }
+    .sidebar nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); }
+
+    .nav-section {
+      color: rgba(255,255,255,.4);
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      padding: .75rem 1.2rem .2rem;
+      white-space: nowrap;
+      overflow: hidden;
+      transition: opacity .2s;
+    }
+    .nav-link-item {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      color: rgba(255,255,255,.75);
+      padding: .55rem 1.1rem;
+      margin: 2px .5rem;
+      border-radius: 8px;
+      text-decoration: none;
       font-size: .875rem;
-      transition: all .15s;
+      white-space: nowrap;
+      transition: background .15s, color .15s;
     }
-    .sidebar .nav-link:hover, .sidebar .nav-link.active {
-      background: rgba(255,255,255,0.12);
+    .nav-link-item i { font-size: 1.05rem; flex-shrink: 0; width: 20px; text-align: center; }
+    .nav-link-item:hover, .nav-link-item.active {
+      background: rgba(255,255,255,.13);
       color: #fff;
     }
-    .sidebar .nav-link i { width: 20px; margin-right: 6px; }
-    .nav-section { color: rgba(255,255,255,0.4); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; padding: .75rem 1.25rem .25rem; }
-    .main-content { margin-left: 240px; min-height: 100vh; }
+    .nav-link-item .link-text { overflow: hidden; transition: opacity .2s, width .2s; }
+
+    /* Botón colapsar */
+    .btn-toggle-sidebar {
+      margin: .75rem .5rem;
+      padding: .5rem;
+      background: rgba(255,255,255,.08);
+      border: none;
+      border-radius: 8px;
+      color: rgba(255,255,255,.7);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      font-size: .8rem;
+      white-space: nowrap;
+      width: calc(100% - 1rem);
+      transition: background .15s;
+    }
+    .btn-toggle-sidebar:hover { background: rgba(255,255,255,.15); color: #fff; }
+    .btn-toggle-sidebar .toggle-text { overflow: hidden; transition: opacity .2s; }
+
+    /* ── ESTADO COLAPSADO (desktop) ──────────────────────── */
+    body.sidebar-collapsed .sidebar { width: var(--sidebar-sm); }
+    body.sidebar-collapsed .brand-text,
+    body.sidebar-collapsed .nav-section,
+    body.sidebar-collapsed .link-text,
+    body.sidebar-collapsed .toggle-text { opacity: 0; width: 0; pointer-events: none; }
+    body.sidebar-collapsed .nav-link-item { justify-content: center; padding: .55rem; }
+    body.sidebar-collapsed .main-content { margin-left: var(--sidebar-sm); }
+    body.sidebar-collapsed .btn-toggle-sidebar { justify-content: center; }
+
+    /* ── MAIN CONTENT ─────────────────────────────────────── */
+    .main-content {
+      margin-left: var(--sidebar-w);
+      min-height: 100dvh;
+      transition: margin-left .25s ease;
+    }
+
     .topbar {
       background: #fff;
       border-bottom: 1px solid #e2e8f0;
-      padding: .75rem 1.5rem;
+      padding: .75rem 1.25rem;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: .75rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
-    .topbar h4 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--ec-blue); }
-    .content-area { padding: 1.5rem; }
+    .topbar h4 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--ec-blue); flex: 1; }
+    .topbar .topbar-date { color: #94a3b8; font-size: .8rem; white-space: nowrap; }
+
+    /* Hamburger (solo móvil) */
+    .btn-hamburger {
+      background: none;
+      border: none;
+      color: var(--ec-blue);
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    /* ── BACKDROP (móvil) ─────────────────────────────────── */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 1049;
+    }
+    .sidebar-backdrop.show { display: block; }
+
+    /* ── CONTENIDO ────────────────────────────────────────── */
+    .content-area { padding: 1.25rem; }
     .card { border: none; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     .stat-card { border-left: 4px solid var(--ec-teal); }
     .badge-alerta { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
-    .table th { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+    .table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b; border-bottom: 2px solid #e2e8f0; }
     .table td { vertical-align: middle; }
     .stock-bajo { background: #fef2f2 !important; }
     .btn-primary { background: var(--ec-teal); border-color: var(--ec-teal); }
     .btn-primary:hover { background: #0f766e; border-color: #0f766e; }
+
+    /* ── RESPONSIVE ──────────────────────────────────────── */
+    @media (max-width: 991px) {
+      /* Sidebar oculta por defecto en móvil */
+      .sidebar {
+        transform: translateX(-100%);
+        width: var(--sidebar-w) !important;
+      }
+      .sidebar.mobile-open { transform: translateX(0); }
+
+      /* Contenido ocupa todo el ancho */
+      .main-content { margin-left: 0 !important; }
+
+      /* Topbar adaptada */
+      .topbar h4 { font-size: .9rem; }
+
+      /* Botón colapsar desktop oculto en móvil */
+      .btn-toggle-sidebar { display: none !important; }
+
+      /* Tablas más compactas */
+      .table { font-size: .82rem; }
+      .content-area { padding: .85rem; }
+
+      /* Cards en columna completa */
+      .stat-card { margin-bottom: .5rem; }
+    }
+
+    @media (max-width: 575px) {
+      .topbar h4 { font-size: .85rem; }
+      .topbar-date { display: none; }
+      .content-area { padding: .65rem; }
+      .card-body { padding: .85rem; }
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
 
-<!-- Sidebar -->
-<div class="sidebar">
+<!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+<div class="sidebar" id="sidebar">
+
   <div class="sidebar-brand">
-    <h5><i class="bi bi-droplet-fill me-2" style="color:var(--ec-accent)"></i>EasyClean Pro</h5>
-    <small>Sistema de Inventario</small>
+    <i class="bi bi-droplet-fill brand-icon"></i>
+    <div class="brand-text">
+      <h5>EasyClean Pro</h5>
+      <small>Sistema de Inventario</small>
+    </div>
   </div>
-  <nav class="flex-grow-1 py-2">
+
+  <nav>
     <div class="nav-section">Principal</div>
-    <a href="/" class="nav-link {% if request.path=='/' %}active{% endif %}">
-      <i class="bi bi-speedometer2"></i> Dashboard
+    <a href="/" class="nav-link-item {% if request.path=='/' %}active{% endif %}">
+      <i class="bi bi-speedometer2"></i><span class="link-text">Dashboard</span>
     </a>
 
     <div class="nav-section">Producción</div>
-    <a href="/produccion" class="nav-link {% if '/produccion' in request.path and 'nueva' not in request.path %}active{% endif %}">
-      <i class="bi bi-list-check"></i> Lotes de Producción
+    <a href="/produccion" class="nav-link-item {% if '/produccion' in request.path and 'nueva' not in request.path and request.path != '/produccion/nueva' %}active{% endif %}">
+      <i class="bi bi-list-check"></i><span class="link-text">Lotes de Producción</span>
     </a>
-    <a href="/produccion/nueva" class="nav-link {% if '/produccion/nueva' in request.path %}active{% endif %}">
-      <i class="bi bi-plus-circle"></i> Nuevo Lote
+    <a href="/produccion/nueva" class="nav-link-item {% if request.path=='/produccion/nueva' %}active{% endif %}">
+      <i class="bi bi-plus-circle"></i><span class="link-text">Nuevo Lote</span>
     </a>
 
     <div class="nav-section">Inventario</div>
-    <a href="/inventario/mp" class="nav-link {% if '/inventario/mp' in request.path %}active{% endif %}">
-      <i class="bi bi-flask"></i> Materias Primas
+    <a href="/inventario/mp" class="nav-link-item {% if '/inventario/mp' in request.path %}active{% endif %}">
+      <i class="bi bi-flask"></i><span class="link-text">Materias Primas</span>
     </a>
-    <a href="/inventario/empaques" class="nav-link {% if '/inventario/empaques' in request.path %}active{% endif %}">
-      <i class="bi bi-box-seam"></i> Empaques
+    <a href="/inventario/empaques" class="nav-link-item {% if '/inventario/empaques' in request.path %}active{% endif %}">
+      <i class="bi bi-box-seam"></i><span class="link-text">Empaques</span>
     </a>
 
     <div class="nav-section">Compras</div>
-    <a href="/compras/mp" class="nav-link {% if '/compras/mp' in request.path %}active{% endif %}">
-      <i class="bi bi-cart-plus"></i> Compras MP
+    <a href="/compras/mp" class="nav-link-item {% if '/compras/mp' in request.path %}active{% endif %}">
+      <i class="bi bi-cart-plus"></i><span class="link-text">Compras MP</span>
     </a>
-    <a href="/compras/empaques" class="nav-link {% if '/compras/empaques' in request.path %}active{% endif %}">
-      <i class="bi bi-bag-plus"></i> Compras Empaques
+    <a href="/compras/empaques" class="nav-link-item {% if '/compras/empaques' in request.path %}active{% endif %}">
+      <i class="bi bi-bag-plus"></i><span class="link-text">Compras Empaques</span>
     </a>
 
     <div class="nav-section">Gestión</div>
-    <a href="/productos" class="nav-link {% if '/productos' in request.path %}active{% endif %}">
-      <i class="bi bi-box"></i> Productos y Fórmulas
+    <a href="/productos" class="nav-link-item {% if '/productos' in request.path %}active{% endif %}">
+      <i class="bi bi-box"></i><span class="link-text">Productos y Fórmulas</span>
     </a>
-    <a href="/operarios" class="nav-link {% if '/operarios' in request.path %}active{% endif %}">
-      <i class="bi bi-people"></i> Operarios
+    <a href="/operarios" class="nav-link-item {% if '/operarios' in request.path %}active{% endif %}">
+      <i class="bi bi-people"></i><span class="link-text">Operarios</span>
     </a>
-    <a href="/reportes" class="nav-link {% if '/reportes' in request.path %}active{% endif %}">
-      <i class="bi bi-bar-chart-line"></i> Reportes
+    <a href="/reportes" class="nav-link-item {% if '/reportes' in request.path %}active{% endif %}">
+      <i class="bi bi-bar-chart-line"></i><span class="link-text">Reportes</span>
     </a>
   </nav>
-  <div class="p-3 border-top" style="border-color:rgba(255,255,255,.1)!important">
-    <small style="color:rgba(255,255,255,.4)">v1.0 · EasyClean Pro</small>
-  </div>
+
+  <!-- Botón colapsar (solo desktop) -->
+  <button class="btn-toggle-sidebar" id="btnCollapseDesktop" title="Colapsar menú">
+    <i class="bi bi-chevron-double-left" id="collapseIcon"></i>
+    <span class="toggle-text">Colapsar menú</span>
+  </button>
+
 </div>
 
-<!-- Main -->
-<div class="main-content">
+<!-- Backdrop móvil -->
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+<!-- ══ CONTENIDO PRINCIPAL ══════════════════════════════════ -->
+<div class="main-content" id="mainContent">
+
   <div class="topbar">
+    <!-- Hamburger móvil -->
+    <button class="btn-hamburger d-lg-none" id="btnHamburger" aria-label="Abrir menú">
+      <i class="bi bi-list"></i>
+    </button>
+
     <h4>{% block page_title %}Inicio{% endblock %}</h4>
-    <span class="text-muted" style="font-size:.85rem"><i class="bi bi-calendar3 me-1"></i>{{ now.strftime('%d/%m/%Y') if now else '' }}</span>
+
+    <span class="topbar-date">
+      <i class="bi bi-calendar3 me-1"></i>{{ now.strftime('%d/%m/%Y') if now else '' }}
+    </span>
   </div>
+
   <div class="content-area">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in messages %}
@@ -136,10 +294,50 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const sidebar   = document.getElementById('sidebar');
+  const backdrop  = document.getElementById('sidebarBackdrop');
+  const btnHam    = document.getElementById('btnHamburger');
+  const btnCol    = document.getElementById('btnCollapseDesktop');
+  const colIcon   = document.getElementById('collapseIcon');
+  const body      = document.body;
+
+  // ── Colapsar desktop ──────────────────────────────────────
+  const COLLAPSED_KEY = 'ec_sidebar_collapsed';
+  function applyCollapsed(collapsed) {
+    body.classList.toggle('sidebar-collapsed', collapsed);
+    colIcon.className = collapsed
+      ? 'bi bi-chevron-double-right'
+      : 'bi bi-chevron-double-left';
+    localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
+  }
+  // Restaurar estado guardado
+  if (window.innerWidth >= 992) {
+    applyCollapsed(localStorage.getItem(COLLAPSED_KEY) === '1');
+  }
+  btnCol?.addEventListener('click', () => {
+    applyCollapsed(!body.classList.contains('sidebar-collapsed'));
+  });
+
+  // ── Abrir/cerrar en móvil ─────────────────────────────────
+  function openSidebar()  { sidebar.classList.add('mobile-open');    backdrop.classList.add('show'); }
+  function closeSidebar() { sidebar.classList.remove('mobile-open'); backdrop.classList.remove('show'); }
+
+  btnHam?.addEventListener('click', openSidebar);
+  backdrop.addEventListener('click', closeSidebar);
+
+  // Cerrar al navegar en móvil
+  sidebar.querySelectorAll('.nav-link-item').forEach(link => {
+    link.addEventListener('click', () => {
+      if (window.innerWidth < 992) closeSidebar();
+    });
+  });
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
