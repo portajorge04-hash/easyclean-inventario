@@ -587,10 +587,14 @@ def editar_producto(prod_id):
     db.close()
     return redirect(url_for('productos_lista'))
 
+# ─── Startup ──────────────────────────────────────────────────────────────────
+# Inicializar DB al arrancar (necesario para Gunicorn en Railway)
+try:
+    init_db()
+except Exception as e:
+    print(f"DB init warning: {e}")
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    if not os.path.exists('easyclean.db'):
-        init_db()
-    # host='0.0.0.0' permite acceso desde otros equipos en la misma red
     app.run(debug=False, host='0.0.0.0', port=5050)
