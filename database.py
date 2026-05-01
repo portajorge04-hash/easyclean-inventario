@@ -227,6 +227,29 @@ SCHEMA_SQLITE = '''
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (tipo_empaque_id) REFERENCES tipos_empaque(id)
     );
+    CREATE TABLE IF NOT EXISTS articulos_bodega (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        categoria TEXT DEFAULT 'General',
+        unidad TEXT DEFAULT 'und',
+        stock_actual INTEGER DEFAULT 0,
+        stock_minimo INTEGER DEFAULT 10,
+        descripcion TEXT,
+        activo INTEGER DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS movimientos_bodega (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        articulo_id INTEGER NOT NULL,
+        tipo TEXT NOT NULL,
+        cantidad INTEGER NOT NULL,
+        fecha TEXT NOT NULL,
+        motivo TEXT,
+        referencia TEXT,
+        responsable TEXT,
+        observaciones TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (articulo_id) REFERENCES articulos_bodega(id)
+    );
 '''
 
 SCHEMA_PG = '''
@@ -323,6 +346,28 @@ SCHEMA_PG = '''
         precio_unitario REAL,
         precio_total REAL,
         numero_factura TEXT,
+        observaciones TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS articulos_bodega (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL,
+        categoria TEXT DEFAULT 'General',
+        unidad TEXT DEFAULT 'und',
+        stock_actual INTEGER DEFAULT 0,
+        stock_minimo INTEGER DEFAULT 10,
+        descripcion TEXT,
+        activo INTEGER DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS movimientos_bodega (
+        id SERIAL PRIMARY KEY,
+        articulo_id INTEGER NOT NULL,
+        tipo TEXT NOT NULL,
+        cantidad INTEGER NOT NULL,
+        fecha TEXT NOT NULL,
+        motivo TEXT,
+        referencia TEXT,
+        responsable TEXT,
         observaciones TEXT,
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -441,6 +486,20 @@ def _seed(db):
     db.executemany(
         "INSERT INTO tipos_empaque (nombre, producto_id, stock_actual, stock_minimo) VALUES (?,?,?,?)",
         empaques
+    )
+    db.commit()
+
+    # Artículos de bodega
+    articulos = [
+        ('Bolsa de Kit', 'Bolsas', 'und', 0, 50),
+        ('Bolsa de Boutique', 'Bolsas', 'und', 0, 50),
+        ('Bolsa de Celofán', 'Bolsas', 'und', 0, 100),
+        ('Cepillo de Suelas', 'Cepillos', 'und', 0, 20),
+        ('Cepillo de Tela', 'Cepillos', 'und', 0, 20),
+    ]
+    db.executemany(
+        "INSERT INTO articulos_bodega (nombre, categoria, unidad, stock_actual, stock_minimo) VALUES (?,?,?,?,?)",
+        articulos
     )
     db.commit()
     print("Datos iniciales cargados.")

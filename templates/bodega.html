@@ -1,0 +1,415 @@
+{% extends 'base.html' %}
+{% block title %}Bodega{% endblock %}
+{% block page_title %}Bodega — Artículos e Inventario{% endblock %}
+
+{% block content %}
+
+<!-- ══ RESUMEN TOP ══════════════════════════════════════════ -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold" style="color:var(--ec-teal)">{{ articulos|length }}</div>
+        <div class="text-muted small">Artículos activos</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-{{ 'danger' if alertas > 0 else 'success' }}">{{ alertas }}</div>
+        <div class="text-muted small">Stock bajo</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <button class="btn btn-success w-100 h-100 d-flex flex-column align-items-center justify-content-center gap-1"
+                data-bs-toggle="modal" data-bs-target="#modalEntrada">
+          <i class="bi bi-box-arrow-in-down fs-4"></i>
+          <span class="small fw-semibold">Registrar Entrada</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <button class="btn btn-warning w-100 h-100 d-flex flex-column align-items-center justify-content-center gap-1"
+                data-bs-toggle="modal" data-bs-target="#modalSalida">
+          <i class="bi bi-box-arrow-up fs-4"></i>
+          <span class="small fw-semibold">Registrar Salida</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STOCK ACTUAL ════════════════════════════════════════ -->
+<div class="card mb-3">
+  <div class="card-body p-0">
+
+    <!-- Filtros + botón nuevo -->
+    <div class="d-flex flex-wrap gap-2 align-items-center p-3 border-bottom">
+      <span class="fw-semibold me-1" style="font-size:.85rem">Filtrar:</span>
+      <a href="/bodega" class="btn btn-sm {{ 'btn-primary' if not cat_filtro else 'btn-outline-secondary' }}">Todos</a>
+      {% for cat in categorias %}
+      <a href="/bodega?categoria={{ cat['categoria'] }}"
+         class="btn btn-sm {{ 'btn-primary' if cat_filtro==cat['categoria'] else 'btn-outline-secondary' }}">
+        {{ cat['categoria'] }}
+      </a>
+      {% endfor %}
+      <div class="ms-auto">
+        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+          <i class="bi bi-plus-circle me-1"></i>Nuevo artículo
+        </button>
+      </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Artículo</th>
+            <th>Categoría</th>
+            <th class="text-center">Stock</th>
+            <th class="text-center">Mínimo</th>
+            <th class="text-center">Estado</th>
+            <th class="text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for art in articulos %}
+          <tr class="{{ 'stock-bajo' if art['stock_actual'] <= art['stock_minimo'] else '' }}">
+            <td>
+              <strong>{{ art['nombre'] }}</strong>
+              {% if art['descripcion'] %}
+              <small class="text-muted d-block">{{ art['descripcion'] }}</small>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge rounded-pill"
+                style="background:{{ {'Bolsas':'#3b82f6','Cepillos':'#8b5cf6','Kits':'#f59e0b','Accesorios':'#10b981','General':'#94a3b8'}[art['categoria']] or '#94a3b8' }};color:#fff;font-size:.72rem">
+                {{ art['categoria'] }}
+              </span>
+            </td>
+            <td class="text-center">
+              <span class="fw-bold fs-5 {{ 'text-danger' if art['stock_actual'] <= art['stock_minimo'] else 'text-dark' }}">
+                {{ art['stock_actual'] }}
+              </span>
+              <small class="text-muted d-block" style="font-size:.72rem">{{ art['unidad'] }}</small>
+            </td>
+            <td class="text-center text-muted">{{ art['stock_minimo'] }}</td>
+            <td class="text-center">
+              {% if art['stock_actual'] <= 0 %}
+                <span class="badge bg-danger">Sin stock</span>
+              {% elif art['stock_actual'] <= art['stock_minimo'] %}
+                <span class="badge bg-warning text-dark">Stock bajo</span>
+              {% else %}
+                <span class="badge bg-success">OK</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <div class="d-flex gap-1 justify-content-center">
+                <button class="btn btn-sm btn-outline-success" title="Entrada rápida"
+                        onclick="setMovimiento('entrada', {{ art['id'] }}, '{{ art['nombre'] }}')">
+                  <i class="bi bi-plus-lg"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-warning" title="Salida rápida"
+                        onclick="setMovimiento('salida', {{ art['id'] }}, '{{ art['nombre'] }}')">
+                  <i class="bi bi-dash-lg"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" title="Ajustar stock"
+                        onclick="abrirAjuste({{ art['id'] }}, '{{ art['nombre'] }}', {{ art['stock_actual'] }})">
+                  <i class="bi bi-pencil"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-5 text-muted">
+              <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+              No hay artículos. <button class="btn btn-link p-0" data-bs-toggle="modal" data-bs-target="#modalNuevo">Agregar el primero</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ HISTORIAL DE MOVIMIENTOS ════════════════════════════ -->
+<div class="card">
+  <div class="card-body p-0">
+    <div class="px-3 py-2 border-bottom d-flex align-items-center justify-content-between">
+      <h6 class="mb-0"><i class="bi bi-clock-history me-1"></i>Últimos movimientos</h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr><th>Fecha</th><th>Artículo</th><th>Tipo</th><th class="text-center">Cant.</th><th>Motivo</th><th>Responsable</th></tr>
+        </thead>
+        <tbody>
+          {% for m in movimientos %}
+          <tr>
+            <td style="font-size:.8rem;white-space:nowrap">{{ m['fecha'] }}</td>
+            <td style="font-size:.82rem">{{ m['articulo_nombre'] }}</td>
+            <td>
+              {% if m['tipo'] == 'Entrada' %}
+                <span class="badge bg-success"><i class="bi bi-arrow-down-circle me-1"></i>Entrada</span>
+              {% else %}
+                <span class="badge bg-warning text-dark"><i class="bi bi-arrow-up-circle me-1"></i>Salida</span>
+              {% endif %}
+            </td>
+            <td class="text-center fw-bold">{{ m['cantidad'] }}</td>
+            <td style="font-size:.82rem" class="text-muted">{{ m['motivo'] or '—' }}</td>
+            <td style="font-size:.82rem" class="text-muted">{{ m['responsable'] or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center py-3 text-muted">Sin movimientos registrados aún</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ MODALES ══════════════════════════════════════════════ -->
+
+<!-- Modal Entrada -->
+<div class="modal fade" id="modalEntrada" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="/bodega/entrada">
+        <div class="modal-header" style="background:var(--ec-teal)">
+          <h6 class="modal-title text-white"><i class="bi bi-box-arrow-in-down me-1"></i>Registrar Entrada</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Artículo <span class="text-danger">*</span></label>
+            <select name="articulo_id" id="entradaArticulo" class="form-select" required>
+              <option value="">— Seleccionar —</option>
+              {% for art in articulos %}
+              <option value="{{ art['id'] }}">{{ art['nombre'] }} (stock: {{ art['stock_actual'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Cantidad <span class="text-danger">*</span></label>
+              <input type="number" name="cantidad" class="form-control" min="1" required placeholder="Ej: 50">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Fecha <span class="text-danger">*</span></label>
+              <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Motivo</label>
+            <select name="motivo" class="form-select">
+              <option>Compra</option>
+              <option>Devolución</option>
+              <option>Ajuste de inventario</option>
+              <option>Transferencia</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">N° Factura / Ref.</label>
+              <input type="text" name="referencia" class="form-control" placeholder="Opcional">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Responsable</label>
+              <input type="text" name="responsable" class="form-control" placeholder="Nombre">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Observaciones</label>
+            <textarea name="observaciones" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-success"><i class="bi bi-check-circle me-1"></i>Registrar Entrada</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Salida -->
+<div class="modal fade" id="modalSalida" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="/bodega/salida">
+        <div class="modal-header" style="background:var(--ec-accent)">
+          <h6 class="modal-title"><i class="bi bi-box-arrow-up me-1"></i>Registrar Salida</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Artículo <span class="text-danger">*</span></label>
+            <select name="articulo_id" id="salidaArticulo" class="form-select" required>
+              <option value="">— Seleccionar —</option>
+              {% for art in articulos %}
+              <option value="{{ art['id'] }}">{{ art['nombre'] }} (stock: {{ art['stock_actual'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Cantidad <span class="text-danger">*</span></label>
+              <input type="number" name="cantidad" class="form-control" min="1" required placeholder="Ej: 10">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Fecha <span class="text-danger">*</span></label>
+              <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Motivo</label>
+            <select name="motivo" class="form-select">
+              <option>Despacho a cliente</option>
+              <option>Uso interno</option>
+              <option>Kit de venta</option>
+              <option>Merma / Daño</option>
+              <option>Transferencia</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Referencia</label>
+              <input type="text" name="referencia" class="form-control" placeholder="Pedido, cliente...">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Responsable</label>
+              <input type="text" name="responsable" class="form-control" placeholder="Nombre">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Observaciones</label>
+            <textarea name="observaciones" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i>Registrar Salida</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nuevo Artículo -->
+<div class="modal fade" id="modalNuevo" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="/bodega/articulo/nuevo">
+        <div class="modal-header" style="background:var(--ec-blue)">
+          <h6 class="modal-title text-white"><i class="bi bi-plus-circle me-1"></i>Nuevo Artículo de Bodega</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control" required placeholder="Ej: Bolsa de Kit Grande">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Categoría</label>
+              <select name="categoria" class="form-select">
+                {% for c in categorias_lista %}
+                <option>{{ c }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Unidad</label>
+              <select name="unidad" class="form-select">
+                <option>und</option>
+                <option>paq</option>
+                <option>caja</option>
+                <option>rollo</option>
+                <option>par</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Stock inicial</label>
+              <input type="number" name="stock_actual" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Stock mínimo</label>
+              <input type="number" name="stock_minimo" class="form-control" value="10" min="0">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Descripción</label>
+            <input type="text" name="descripcion" class="form-control" placeholder="Opcional">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Agregar Artículo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ajuste Stock -->
+<div class="modal fade" id="modalAjuste" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <form method="POST" action="/bodega/ajuste">
+        <div class="modal-header">
+          <h6 class="modal-title">Ajustar Stock</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="articulo_id" id="ajusteId">
+          <p class="mb-2"><strong id="ajusteNombre"></strong></p>
+          <label class="form-label small">Nuevo stock</label>
+          <input type="number" name="nuevo_stock" id="ajusteStock" class="form-control" min="0" required>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary w-100">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Abrir modal entrada/salida con artículo preseleccionado
+function setMovimiento(tipo, artId, artNombre) {
+  const modalId = tipo === 'entrada' ? 'modalEntrada' : 'modalSalida';
+  const selectId = tipo === 'entrada' ? 'entradaArticulo' : 'salidaArticulo';
+  const modal = new bootstrap.Modal(document.getElementById(modalId));
+  modal.show();
+  setTimeout(() => {
+    document.getElementById(selectId).value = artId;
+  }, 150);
+}
+
+// Ajuste stock
+function abrirAjuste(id, nombre, stock) {
+  document.getElementById('ajusteId').value = id;
+  document.getElementById('ajusteNombre').textContent = nombre;
+  document.getElementById('ajusteStock').value = stock;
+  new bootstrap.Modal(document.getElementById('modalAjuste')).show();
+}
+</script>
+{% endblock %}

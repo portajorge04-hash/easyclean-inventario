@@ -587,6 +587,121 @@ def editar_producto(prod_id):
     db.close()
     return redirect(url_for('productos_lista'))
 
+# ─── Bodega ───────────────────────────────────────────────────────────────────
+
+CATEGORIAS_BODEGA = ['Bolsas', 'Cepillos', 'Kits', 'Accesorios', 'General']
+
+@app.route('/bodega')
+def bodega():
+    db = get_db()
+    cat = request.args.get('categoria', '')
+    q = "SELECT * FROM articulos_bodega WHERE activo=1"
+    params = []
+    if cat:
+        q += " AND categoria=?"; params.append(cat)
+    q += " ORDER BY categoria, nombre"
+    articulos = db.execute(q, params).fetchall()
+
+    alertas = db.execute(
+        "SELECT COUNT(*) as n FROM articulos_bodega WHERE stock_actual <= stock_minimo AND activo=1"
+    ).fetchone()['n']
+
+    movimientos = db.execute("""
+        SELECT m.*, a.nombre as articulo_nombre
+        FROM movimientos_bodega m
+        JOIN articulos_bodega a ON a.id = m.articulo_id
+        ORDER BY m.id DESC LIMIT 30
+    """).fetchall()
+
+    categorias = db.execute(
+        "SELECT DISTINCT categoria FROM articulos_bodega WHERE activo=1 ORDER BY categoria"
+    ).fetchall()
+
+    hoy = date.today().isoformat()
+    db.close()
+    return render_template('bodega.html', articulos=articulos, movimientos=movimientos,
+                           alertas=alertas, categorias=categorias,
+                           categorias_lista=CATEGORIAS_BODEGA,
+                           cat_filtro=cat, hoy=hoy)
+
+@app.route('/bodega/articulo/nuevo', methods=['POST'])
+def bodega_articulo_nuevo():
+    db = get_db()
+    db.execute("""
+        INSERT INTO articulos_bodega (nombre, categoria, unidad, stock_actual, stock_minimo, descripcion)
+        VALUES (?,?,?,?,?,?)
+    """, (
+        request.form['nombre'],
+        request.form.get('categoria', 'General'),
+        request.form.get('unidad', 'und'),
+        int(request.form.get('stock_actual', 0)),
+        int(request.form.get('stock_minimo', 10)),
+        request.form.get('descripcion', '')
+    ))
+    db.commit()
+    flash(f'Artículo "{request.form["nombre"]}" agregado a bodega.', 'success')
+    db.close()
+    return redirect(url_for('bodega'))
+
+@app.route('/bodega/entrada', methods=['POST'])
+def bodega_entrada():
+    db = get_db()
+    art_id  = int(request.form['articulo_id'])
+    cantidad = int(request.form['cantidad'])
+    db.execute("""
+        INSERT INTO movimientos_bodega
+        (articulo_id, tipo, cantidad, fecha, motivo, referencia, responsable, observaciones)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, (art_id, 'Entrada', cantidad,
+          request.form['fecha'],
+          request.form.get('motivo', 'Compra'),
+          request.form.get('referencia', ''),
+          request.form.get('responsable', ''),
+          request.form.get('observaciones', '')))
+    db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual + ? WHERE id=?", (cantidad, art_id))
+    db.commit()
+    art = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (art_id,)).fetchone()
+    flash(f'Entrada registrada: +{cantidad} {art["nombre"]}.', 'success')
+    db.close()
+    return redirect(url_for('bodega'))
+
+@app.route('/bodega/salida', methods=['POST'])
+def bodega_salida():
+    db = get_db()
+    art_id  = int(request.form['articulo_id'])
+    cantidad = int(request.form['cantidad'])
+    art = db.execute("SELECT nombre, stock_actual FROM articulos_bodega WHERE id=?", (art_id,)).fetchone()
+    if cantidad > art['stock_actual']:
+        flash(f'Stock insuficiente. Solo hay {art["stock_actual"]} unidades de {art["nombre"]}.', 'danger')
+        db.close()
+        return redirect(url_for('bodega'))
+    db.execute("""
+        INSERT INTO movimientos_bodega
+        (articulo_id, tipo, cantidad, fecha, motivo, referencia, responsable, observaciones)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, (art_id, 'Salida', cantidad,
+          request.form['fecha'],
+          request.form.get('motivo', 'Uso'),
+          request.form.get('referencia', ''),
+          request.form.get('responsable', ''),
+          request.form.get('observaciones', '')))
+    db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual - ? WHERE id=?", (cantidad, art_id))
+    db.commit()
+    flash(f'Salida registrada: -{cantidad} {art["nombre"]}.', 'success')
+    db.close()
+    return redirect(url_for('bodega'))
+
+@app.route('/bodega/ajuste', methods=['POST'])
+def bodega_ajuste():
+    db = get_db()
+    art_id = int(request.form['articulo_id'])
+    nuevo  = int(request.form['nuevo_stock'])
+    db.execute("UPDATE articulos_bodega SET stock_actual=? WHERE id=?", (nuevo, art_id))
+    db.commit()
+    flash('Stock ajustado correctamente.', 'info')
+    db.close()
+    return redirect(url_for('bodega'))
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 # Inicializar DB al arrancar (necesario para Gunicorn en Railway)
 try:
