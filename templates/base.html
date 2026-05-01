@@ -8,15 +8,17 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     :root {
-      --ec-blue:    #1a3c5e;
-      --ec-teal:    #0d9488;
+      --ec-blue:    #1c20c4;
+      --ec-blue-dk: #1316a0;
+      --ec-sky:     #0ea5e9;
       --ec-accent:  #f59e0b;
+      --ec-gold:    #f5a623;
       --sidebar-w:  240px;
       --sidebar-sm: 64px;
     }
 
     * { box-sizing: border-box; }
-    body { background: #f1f5f9; font-family: 'Segoe UI', sans-serif; margin: 0; }
+    body { background: #f0f4ff; font-family: 'Segoe UI', sans-serif; margin: 0; }
 
     /* ── SIDEBAR ─────────────────────────────────────────── */
     .sidebar {
@@ -34,17 +36,46 @@
 
     /* Marca */
     .sidebar-brand {
-      padding: 1rem 1.1rem;
-      border-bottom: 1px solid rgba(255,255,255,.1);
+      padding: .85rem 1.1rem;
+      border-bottom: 1px solid rgba(255,255,255,.12);
       display: flex;
       align-items: center;
-      gap: .65rem;
       min-height: 64px;
       white-space: nowrap;
+      background: rgba(0,0,0,.12);
     }
-    .sidebar-brand .brand-icon { font-size: 1.4rem; color: var(--ec-accent); flex-shrink: 0; }
-    .sidebar-brand .brand-text h5  { color: #fff; font-weight: 700; margin: 0; font-size: .95rem; }
-    .sidebar-brand .brand-text small { color: var(--ec-accent); font-size: .7rem; }
+    /* Logo CSS — replica la identidad visual de la marca */
+    .ec-logo-wrap { display: flex; flex-direction: column; line-height: 1; }
+    .ec-logo-easy {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .ec-logo-row2 { display: flex; align-items: center; gap: 5px; margin-top: 1px; }
+    .ec-logo-clean {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+    .ec-logo-pro {
+      font-size: .58rem;
+      font-weight: 700;
+      color: #fff;
+      border: 1.5px solid rgba(255,255,255,.8);
+      border-radius: 20px;
+      padding: 2px 6px;
+      letter-spacing: .06em;
+    }
+    /* Ícono colapsado */
+    .ec-logo-mini {
+      font-size: 1.1rem;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -0.05em;
+    }
 
     /* Nav */
     .sidebar nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: .5rem 0; }
@@ -104,10 +135,11 @@
 
     /* ── ESTADO COLAPSADO (desktop) ──────────────────────── */
     body.sidebar-collapsed .sidebar { width: var(--sidebar-sm); }
-    body.sidebar-collapsed .brand-text,
     body.sidebar-collapsed .nav-section,
     body.sidebar-collapsed .link-text,
     body.sidebar-collapsed .toggle-text { opacity: 0; width: 0; pointer-events: none; }
+    body.sidebar-collapsed .ec-logo-wrap { opacity: 0; width: 0; pointer-events: none; }
+    body.sidebar-collapsed #logoMini { display: inline !important; }
     body.sidebar-collapsed .nav-link-item { justify-content: center; padding: .55rem; }
     body.sidebar-collapsed .main-content { margin-left: var(--sidebar-sm); }
     body.sidebar-collapsed .btn-toggle-sidebar { justify-content: center; }
@@ -130,7 +162,7 @@
       top: 0;
       z-index: 100;
     }
-    .topbar h4 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--ec-blue); flex: 1; }
+    .topbar h4 { margin: 0; font-size: 1rem; font-weight: 700; color: var(--ec-blue); flex: 1; letter-spacing: -.01em; }
     .topbar .topbar-date { color: #94a3b8; font-size: .8rem; white-space: nowrap; }
 
     /* Hamburger (solo móvil) */
@@ -157,14 +189,15 @@
 
     /* ── CONTENIDO ────────────────────────────────────────── */
     .content-area { padding: 1.25rem; }
-    .card { border: none; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .stat-card { border-left: 4px solid var(--ec-teal); }
+    .card { border: none; border-radius: 14px; box-shadow: 0 2px 8px rgba(28,32,196,.07), 0 1px 2px rgba(0,0,0,.04); }
+    .stat-card { border-left: 4px solid var(--ec-sky); }
     .badge-alerta { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
     .table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b; border-bottom: 2px solid #e2e8f0; }
     .table td { vertical-align: middle; }
     .stock-bajo { background: #fef2f2 !important; }
-    .btn-primary { background: var(--ec-teal); border-color: var(--ec-teal); }
-    .btn-primary:hover { background: #0f766e; border-color: #0f766e; }
+    .btn-primary { background: var(--ec-sky); border-color: var(--ec-sky); }
+    .btn-primary:hover { background: #0284c7; border-color: #0284c7; }
+    .topbar { box-shadow: 0 1px 6px rgba(28,32,196,.06); }
 
     /* ── RESPONSIVE ──────────────────────────────────────── */
     @media (max-width: 991px) {
@@ -207,11 +240,14 @@
 <div class="sidebar" id="sidebar">
 
   <div class="sidebar-brand">
-    <i class="bi bi-droplet-fill brand-icon"></i>
-    <div class="brand-text">
-      <h5>EasyClean Pro</h5>
-      <small>Sistema de Inventario</small>
+    <div class="ec-logo-wrap link-text">
+      <div class="ec-logo-easy">easy</div>
+      <div class="ec-logo-row2">
+        <span class="ec-logo-clean">Clean</span>
+        <span class="ec-logo-pro">PRO</span>
+      </div>
     </div>
+    <span class="ec-logo-mini" style="display:none" id="logoMini">eC</span>
   </div>
 
   <nav>

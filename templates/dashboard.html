@@ -2,9 +2,135 @@
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}Dashboard General{% endblock %}
 
+{% block head %}
+<style>
+  /* ── Banner de Marca ─────────────────────────────────────── */
+  .ec-brand-banner {
+    background: linear-gradient(135deg, #1c20c4 0%, #1616a8 50%, #0ea5e9 100%);
+    border-radius: 16px;
+    padding: 1.4rem 1.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    box-shadow: 0 8px 28px rgba(28,32,196,.25);
+    position: relative;
+    overflow: hidden;
+  }
+  .ec-brand-banner::before {
+    content: '';
+    position: absolute;
+    right: -40px; top: -40px;
+    width: 200px; height: 200px;
+    background: rgba(255,255,255,.05);
+    border-radius: 50%;
+  }
+  .ec-brand-banner::after {
+    content: '';
+    position: absolute;
+    right: 60px; bottom: -60px;
+    width: 150px; height: 150px;
+    background: rgba(255,255,255,.04);
+    border-radius: 50%;
+  }
+
+  /* Logo en el banner */
+  .banner-logo-wrap { flex-shrink: 0; line-height: 1; }
+  .banner-logo-easy {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+  .banner-logo-row2 { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+  .banner-logo-clean {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.02em;
+  }
+  .banner-logo-pro {
+    font-size: .72rem;
+    font-weight: 700;
+    color: #fff;
+    border: 2px solid rgba(255,255,255,.85);
+    border-radius: 20px;
+    padding: 3px 9px;
+    letter-spacing: .07em;
+  }
+
+  .banner-divider {
+    width: 1px;
+    height: 52px;
+    background: rgba(255,255,255,.25);
+    flex-shrink: 0;
+  }
+  .banner-info h5 { color: #fff; font-weight: 600; margin: 0; font-size: 1.05rem; }
+  .banner-info small { color: rgba(255,255,255,.7); font-size: .82rem; }
+
+  .banner-stat {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .banner-stat .num { color: #fff; font-size: 2rem; font-weight: 700; line-height: 1; }
+  .banner-stat .lbl { color: rgba(255,255,255,.65); font-size: .75rem; }
+
+  /* ── Stat Cards rediseñadas ──────────────────────────────── */
+  .prod-card {
+    border-radius: 14px;
+    border: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .prod-card .card-accent {
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px;
+    height: 100%;
+    border-radius: 14px 0 0 14px;
+  }
+  .prod-card-num {
+    font-size: 2.4rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  /* ── Responsive banner ───────────────────────────────────── */
+  @media (max-width: 767px) {
+    .ec-brand-banner { padding: 1rem 1.1rem; gap: 1rem; }
+    .banner-logo-easy { font-size: 1.6rem; }
+    .banner-logo-clean { font-size: 1.3rem; }
+    .banner-divider, .banner-stat { display: none !important; }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<!-- Alertas -->
+<!-- ── Banner de marca ──────────────────────────────────────── -->
+<div class="ec-brand-banner mb-4">
+  <div class="banner-logo-wrap">
+    <div class="banner-logo-easy">easy</div>
+    <div class="banner-logo-row2">
+      <span class="banner-logo-clean">Clean</span>
+      <span class="banner-logo-pro">PRO</span>
+    </div>
+  </div>
+
+  <div class="banner-divider"></div>
+
+  <div class="banner-info">
+    <h5>Sistema de Inventario</h5>
+    <small><i class="bi bi-calendar3 me-1"></i>{{ now.strftime('%d de %B de %Y') if now else '' }}</small>
+  </div>
+
+  <div class="ms-auto banner-stat">
+    <div class="num">{{ productos|length }}</div>
+    <div class="lbl">productos activos</div>
+  </div>
+</div>
+
+<!-- ── Alertas ─────────────────────────────────────────────── -->
 {% if alertas_mp or alertas_emp %}
 <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
   <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
@@ -20,22 +146,25 @@
 </div>
 {% endif %}
 
-<!-- Cards por producto -->
+<!-- ── Cards por producto ────────────────────────────────────── -->
 <div class="row g-3 mb-4">
+  {% set colores = ['#1c20c4','#0ea5e9','#f59e0b'] %}
   {% for p in productos %}
   {% set s = stats[p['id']] %}
+  {% set color = colores[loop.index0 % 3] %}
   <div class="col-md-4">
-    <div class="card stat-card h-100">
-      <div class="card-body">
+    <div class="card prod-card h-100">
+      <div class="card-accent" style="background:{{ color }}"></div>
+      <div class="card-body ps-4">
         <div class="d-flex justify-content-between align-items-start mb-2">
           <div>
-            <div class="text-muted" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em">Producción este mes</div>
-            <h5 class="mb-0 mt-1" style="color:var(--ec-blue)">{{ p['nombre'] }}</h5>
+            <div class="text-muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;font-weight:600">Producción este mes</div>
+            <h6 class="mb-0 mt-1 fw-bold" style="color:#1e293b;font-size:.9rem">{{ p['nombre'] }}</h6>
           </div>
-          <span class="badge bg-light text-dark border">{{ p['tamano_envase_ml'] }}ml</span>
+          <span class="badge border" style="background:#f0f4ff;color:{{ color }};border-color:{{ color }}!important;font-size:.72rem">{{ p['tamano_envase_ml'] }}ml</span>
         </div>
-        <div class="display-6 fw-bold" style="color:var(--ec-teal)">{{ s['total_mes'] or 0 }}</div>
-        <small class="text-muted">unidades producidas este mes</small>
+        <div class="prod-card-num" style="color:{{ color }}">{{ s['total_mes'] or 0 }}</div>
+        <small class="text-muted">unidades producidas</small>
         {% if s['ultimo'] %}
         <div class="mt-2 pt-2 border-top">
           <small class="text-muted">Último lote: <strong>{{ s['ultimo']['fecha_produccion'] }}</strong> — {{ s['ultimo']['unidades_producidas'] }} uds</small>
@@ -47,12 +176,14 @@
   {% endfor %}
 </div>
 
-<!-- Gráfico + últimos lotes -->
+<!-- ── Gráfico + últimos lotes ───────────────────────────────── -->
 <div class="row g-3 mb-4">
   <div class="col-lg-7">
     <div class="card h-100">
       <div class="card-body">
-        <h6 class="card-title mb-3">Producción — últimos 7 días</h6>
+        <h6 class="card-title mb-3 fw-bold" style="color:#1e293b">
+          <i class="bi bi-bar-chart-fill me-1" style="color:#0ea5e9"></i>Producción — últimos 7 días
+        </h6>
         <canvas id="graficoProduccion" height="200"></canvas>
       </div>
     </div>
@@ -60,7 +191,9 @@
   <div class="col-lg-5">
     <div class="card h-100">
       <div class="card-body">
-        <h6 class="card-title mb-3">Últimos lotes registrados</h6>
+        <h6 class="card-title mb-3 fw-bold" style="color:#1e293b">
+          <i class="bi bi-clock-history me-1" style="color:#0ea5e9"></i>Últimos lotes registrados
+        </h6>
         <div class="table-responsive">
           <table class="table table-sm table-hover">
             <thead>
@@ -69,7 +202,7 @@
             <tbody>
               {% for lote in ultimos_lotes %}
               <tr onclick="window.location='/produccion/{{ lote['id'] }}'" style="cursor:pointer">
-                <td><code>{{ lote['codigo_lote'] }}</code></td>
+                <td><code style="font-size:.78rem;color:#1c20c4">{{ lote['codigo_lote'] }}</code></td>
                 <td style="font-size:.8rem">{{ lote['producto_nombre']|replace('Suelas y Sintéticos','S&S')|replace('Material Textil','Textil')|replace('Icon White (Suelas Amarillas)','Icon White') }}</td>
                 <td style="font-size:.82rem">{{ lote['fecha_produccion'] }}</td>
                 <td><strong>{{ lote['unidades_producidas'] }}</strong></td>
@@ -81,27 +214,29 @@
           </table>
         </div>
         <a href="/produccion/nueva" class="btn btn-primary btn-sm mt-1 w-100">
-          <i class="bi bi-plus-circle me-1"></i> Registrar nuevo lote
+          <i class="bi bi-plus-circle me-1"></i>Registrar nuevo lote
         </a>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Stock rápido -->
+<!-- ── Stock crítico ─────────────────────────────────────────── -->
 <div class="row g-3">
   <div class="col-12">
     <div class="card">
       <div class="card-body">
-        <h6 class="card-title mb-3">Estado de Stock Crítico</h6>
+        <h6 class="card-title mb-3 fw-bold" style="color:#1e293b">
+          <i class="bi bi-exclamation-diamond me-1" style="color:#f59e0b"></i>Estado de Stock Crítico
+        </h6>
         <div class="row">
           <div class="col-md-6">
-            <p class="text-muted mb-2" style="font-size:.8rem;font-weight:600;text-transform:uppercase">Materias Primas en Alerta</p>
+            <p class="text-muted mb-2" style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em">Materias Primas en Alerta</p>
             {% if alertas_mp %}
             <ul class="list-group list-group-flush">
               {% for a in alertas_mp %}
               <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                <span>{{ a['nombre'] }}</span>
+                <span style="font-size:.88rem">{{ a['nombre'] }}</span>
                 <span>
                   <span class="text-danger fw-bold">{{ a['stock_actual'] }}</span>
                   <span class="text-muted"> / mín {{ a['stock_minimo'] }} {{ a['unidad'] }}</span>
@@ -110,22 +245,22 @@
               {% endfor %}
             </ul>
             {% else %}
-            <p class="text-success"><i class="bi bi-check-circle me-1"></i>Todo el stock está bien</p>
+            <p class="text-success mb-0"><i class="bi bi-check-circle-fill me-1"></i>Todo el stock está bien</p>
             {% endif %}
           </div>
           <div class="col-md-6">
-            <p class="text-muted mb-2" style="font-size:.8rem;font-weight:600;text-transform:uppercase">Empaques en Alerta</p>
+            <p class="text-muted mb-2" style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em">Empaques en Alerta</p>
             {% if alertas_emp %}
             <ul class="list-group list-group-flush">
               {% for a in alertas_emp %}
               <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                <span>{{ a['nombre'] }}</span>
+                <span style="font-size:.88rem">{{ a['nombre'] }}</span>
                 <span class="text-danger fw-bold">{{ a['stock_actual'] }} uds</span>
               </li>
               {% endfor %}
             </ul>
             {% else %}
-            <p class="text-success"><i class="bi bi-check-circle me-1"></i>Empaques OK</p>
+            <p class="text-success mb-0"><i class="bi bi-check-circle-fill me-1"></i>Empaques OK</p>
             {% endif %}
           </div>
         </div>
@@ -140,10 +275,13 @@
 <script>
 const datos = {{ datos_grafico|safe }};
 
-// Agrupar por fecha y producto
-const fechas = [...new Set(datos.map(d => d.fecha_produccion))].sort();
+const fechas   = [...new Set(datos.map(d => d.fecha_produccion))].sort();
 const productos = [...new Set(datos.map(d => d.producto))];
-const colores = { 'Suelas y Sintéticos': '#0d9488', 'Material Textil': '#3b82f6', 'Icon White (Suelas Amarillas)': '#f59e0b' };
+const colores  = {
+  'Suelas y Sintéticos':           '#1c20c4',
+  'Material Textil':               '#0ea5e9',
+  'Icon White (Suelas Amarillas)': '#f59e0b'
+};
 
 const datasets = productos.map(prod => ({
   label: prod.replace('Suelas y Sintéticos','S&S').replace('Icon White (Suelas Amarillas)','Icon White'),
@@ -152,7 +290,7 @@ const datasets = productos.map(prod => ({
     return row ? row.total : 0;
   }),
   backgroundColor: colores[prod] || '#94a3b8',
-  borderRadius: 4,
+  borderRadius: 6,
 }));
 
 new Chart(document.getElementById('graficoProduccion'), {
@@ -160,10 +298,12 @@ new Chart(document.getElementById('graficoProduccion'), {
   data: { labels: fechas.map(f => f.slice(5)), datasets },
   options: {
     responsive: true,
-    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }
+    },
     scales: {
-      x: { grid: { display: false } },
-      y: { beginAtZero: true, grid: { color: '#f1f5f9' } }
+      x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+      y: { beginAtZero: true, grid: { color: '#e8edf8' }, ticks: { font: { size: 11 } } }
     }
   }
 });
