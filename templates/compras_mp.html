@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}Compras Materias Primas{% endblock %}
+{% block page_title %}Compras — Materias Primas{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- Formulario -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-cart-plus me-1"></i>Registrar Compra</h6>
+        <form method="POST">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Materia Prima <span class="text-danger">*</span></label>
+            <select name="materia_prima_id" class="form-select form-select-sm" required>
+              <option value="">— Seleccionar —</option>
+              {% for mp in mps %}
+              <option value="{{ mp['id'] }}">{{ mp['nombre'] }} (stock: {{ mp['stock_actual'] }} {{ mp['unidad'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-7">
+              <label class="form-label small fw-semibold">Cantidad <span class="text-danger">*</span></label>
+              <input type="number" name="cantidad" class="form-control form-control-sm" step="0.001" min="0.001" required>
+            </div>
+            <div class="col-5">
+              <label class="form-label small fw-semibold">Unidad</label>
+              <select name="unidad" class="form-select form-select-sm">
+                <option>kg</option>
+                <option>g</option>
+                <option>L</option>
+                <option>ml</option>
+                <option>und</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Fecha <span class="text-danger">*</span></label>
+            <input type="date" name="fecha" class="form-control form-control-sm" value="{{ hoy }}" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Proveedor</label>
+            <input type="text" name="proveedor" class="form-control form-control-sm" placeholder="Nombre del proveedor">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Precio Unitario</label>
+              <input type="number" name="precio_unitario" class="form-control form-control-sm" step="0.01" placeholder="$">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Precio Total</label>
+              <input type="number" name="precio_total" class="form-control form-control-sm" step="0.01" placeholder="$">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Nº Factura / Remisión</label>
+            <input type="text" name="numero_factura" class="form-control form-control-sm">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Observaciones</label>
+            <textarea name="observaciones" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm w-100">
+            <i class="bi bi-check-circle me-1"></i>Registrar Compra
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historial -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="px-3 py-2 border-bottom">
+          <h6 class="mb-0">Últimas 50 compras</h6>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr><th>Fecha</th><th>Materia Prima</th><th>Cantidad</th><th>Proveedor</th><th>Total</th><th>Factura</th></tr>
+            </thead>
+            <tbody>
+              {% for c in compras %}
+              <tr>
+                <td style="font-size:.82rem">{{ c['fecha'] }}</td>
+                <td style="font-size:.82rem">{{ c['mp_nombre'] }}</td>
+                <td><strong>{{ c['cantidad'] }}</strong> {{ c['unidad'] }}</td>
+                <td style="font-size:.82rem" class="text-muted">{{ c['proveedor'] or '—' }}</td>
+                <td>{{ ('$'+'{:,.0f}'.format(c['precio_total'])) if c['precio_total'] else '—' }}</td>
+                <td style="font-size:.78rem" class="text-muted">{{ c['numero_factura'] or '—' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center py-4 text-muted">Sin compras registradas</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

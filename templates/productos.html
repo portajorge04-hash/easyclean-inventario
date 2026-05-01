@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+{% block title %}Productos{% endblock %}
+{% block page_title %}Gestión de Productos y Fórmulas{% endblock %}
+
+{% block content %}
+
+<!-- ══ PRODUCTOS EXISTENTES ══════════════════════════════════════════════════ -->
+{% for p in productos %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center py-2"
+       style="background:var(--ec-blue)">
+    <div>
+      <span class="text-white fw-bold">{{ p['nombre'] }}</span>
+      <span class="badge bg-light text-dark ms-2">{{ p['tamano_envase_ml'] }}ml</span>
+      <span class="badge ms-1" style="background:var(--ec-accent);color:#000">
+        Código: {{ p['prefijo_lote'] or '—' }}
+      </span>
+    </div>
+    <button class="btn btn-sm btn-outline-light" data-bs-toggle="collapse"
+            data-bs-target="#prod{{ p['id'] }}">
+      <i class="bi bi-chevron-down"></i> Editar / Ver
+    </button>
+  </div>
+
+  <div class="collapse" id="prod{{ p['id'] }}">
+    <div class="card-body">
+      <div class="row g-3">
+
+        <!-- Info + edición -->
+        <div class="col-md-4">
+          <h6 class="fw-semibold mb-2">Datos del Producto</h6>
+          <form method="POST" action="/productos/{{ p['id'] }}/editar">
+            <div class="mb-2">
+              <label class="form-label small">Nombre</label>
+              <input type="text" name="nombre" class="form-control form-control-sm" value="{{ p['nombre'] }}" required>
+            </div>
+            <div class="row g-1 mb-2">
+              <div class="col-6">
+                <label class="form-label small">Envase (ml)</label>
+                <input type="number" name="tamano_envase_ml" class="form-control form-control-sm" value="{{ p['tamano_envase_ml'] }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small">Litros/Lote</label>
+                <input type="number" name="litros_por_lote" class="form-control form-control-sm" value="{{ p['litros_por_lote'] }}" step="0.001">
+              </div>
+            </div>
+            <div class="row g-1 mb-2">
+              <div class="col-6">
+                <label class="form-label small">Uds/Lote</label>
+                <input type="number" name="unidades_por_lote" class="form-control form-control-sm" value="{{ p['unidades_por_lote'] }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small">Prefijo código</label>
+                <input type="text" name="prefijo_lote" class="form-control form-control-sm"
+                       value="{{ p['prefijo_lote'] or '' }}" maxlength="4" placeholder="Ej: GM">
+              </div>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small">Descripción</label>
+              <input type="text" name="descripcion" class="form-control form-control-sm" value="{{ p['descripcion'] or '' }}">
+            </div>
+            <button class="btn btn-sm btn-primary w-100">Guardar cambios</button>
+          </form>
+        </div>
+
+        <!-- Fórmula actual -->
+        <div class="col-md-4">
+          <h6 class="fw-semibold mb-2">Fórmula actual
+            <small class="text-muted fw-normal">(por lote base)</small>
+          </h6>
+          {% set formula = producto_formulas[p['id']] %}
+          {% if formula %}
+          <table class="table table-sm table-bordered mb-2">
+            <thead class="table-light">
+              <tr><th>Ingrediente</th><th>Cantidad</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for ing in formula %}
+              <tr>
+                <td style="font-size:.82rem">{{ ing['nombre'] }}</td>
+                <td style="font-size:.82rem"><strong>{{ ing['cantidad'] }}</strong> {{ ing['unidad'] }}</td>
+                <td class="text-center">
+                  <form method="POST" action="/productos/{{ p['id'] }}/ingrediente/{{ ing['id'] }}/eliminar"
+                        onsubmit="return confirm('¿Eliminar este ingrediente de la fórmula?')">
+                    <button class="btn btn-sm btn-link text-danger p-0" title="Eliminar">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="text-muted small">Sin ingredientes en la fórmula.</p>
+          {% endif %}
+        </div>
+
+        <!-- Agregar ingrediente -->
+        <div class="col-md-4">
+          <h6 class="fw-semibold mb-2">Agregar / Actualizar Ingrediente</h6>
+          <form method="POST" action="/productos/{{ p['id'] }}/ingrediente/agregar">
+            <div class="mb-2">
+              <label class="form-label small">Materia Prima</label>
+              <select name="mp_id" class="form-select form-select-sm" required>
+                <option value="">— Seleccionar —</option>
+                {% for mp in mps %}
+                <option value="{{ mp['id'] }}">{{ mp['nombre'] }} ({{ mp['unidad'] }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="row g-1 mb-3">
+              <div class="col-7">
+                <label class="form-label small">Cantidad</label>
+                <input type="number" name="cantidad" class="form-control form-control-sm" step="0.001" required placeholder="Ej: 2.17">
+              </div>
+              <div class="col-5">
+                <label class="form-label small">Unidad</label>
+                <select name="unidad" class="form-select form-select-sm">
+                  <option>kg</option>
+                  <option>g</option>
+                  <option>L</option>
+                  <option>ml</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline-primary w-100">
+              <i class="bi bi-plus-circle me-1"></i>Agregar a fórmula
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<!-- ══ NUEVO PRODUCTO ════════════════════════════════════════════════════════ -->
+<div class="card border-2" style="border-color:var(--ec-teal)!important">
+  <div class="card-header py-2" style="background:var(--ec-teal)">
+    <h6 class="text-white mb-0"><i class="bi bi-plus-circle me-2"></i>Agregar Nuevo Producto</h6>
+  </div>
+  <div class="card-body">
+    <form method="POST" action="/productos/nuevo" id="formNuevoProd">
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Nombre del Producto <span class="text-danger">*</span></label>
+          <input type="text" name="nombre" class="form-control" required placeholder="Ej: Limpiador Gamuzas">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold">Envase (ml) <span class="text-danger">*</span></label>
+          <input type="number" name="tamano_envase_ml" class="form-control" required placeholder="120">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold">Litros por Lote <span class="text-danger">*</span></label>
+          <input type="number" name="litros_por_lote" class="form-control" step="0.001" required placeholder="80">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold">Uds. Estimadas/Lote</label>
+          <input type="number" name="unidades_por_lote" class="form-control" id="uds_por_lote" placeholder="Auto">
+          <small class="text-muted">Se calcula automáticamente si dejas en blanco</small>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold">Prefijo código lote</label>
+          <input type="text" name="prefijo_lote" class="form-control" maxlength="4"
+                 placeholder="Ej: GM" style="text-transform:uppercase">
+          <small class="text-muted">Ej: GM → GM-20260430-001</small>
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Descripción</label>
+        <input type="text" name="descripcion" class="form-control" placeholder="Descripción breve del producto">
+      </div>
+
+      <!-- Fórmula del nuevo producto -->
+      <hr>
+      <h6 class="fw-semibold mb-3"><i class="bi bi-flask me-1"></i>Fórmula (ingredientes por lote base)</h6>
+
+      <div id="ingredientes-container">
+        <!-- Fila 1 -->
+        <div class="row g-2 mb-2 ingrediente-fila">
+          <div class="col-md-5">
+            <select name="mp_id" class="form-select form-select-sm">
+              <option value="">— Materia Prima —</option>
+              {% for mp in mps %}
+              <option value="{{ mp['id'] }}">{{ mp['nombre'] }} ({{ mp['unidad'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <input type="number" name="mp_cantidad" class="form-control form-control-sm" step="0.001" placeholder="Cantidad">
+          </div>
+          <div class="col-md-2">
+            <select name="mp_unidad" class="form-select form-select-sm">
+              <option>kg</option>
+              <option>g</option>
+              <option>L</option>
+              <option>ml</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <button type="button" class="btn btn-sm btn-outline-danger w-100 btn-eliminar-fila">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-outline-secondary btn-sm mb-4" id="btnAgregarFila">
+        <i class="bi bi-plus me-1"></i>Agregar otro ingrediente
+      </button>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check-circle me-1"></i>Crear Producto con Fórmula
+        </button>
+        <a href="/" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-calcular unidades estimadas
+const envaseInput = document.querySelector('[name="tamano_envase_ml"]');
+const litrosInput = document.querySelector('[name="litros_por_lote"]');
+const udsInput = document.getElementById('uds_por_lote');
+
+function calcularUds() {
+  const ml = parseFloat(envaseInput.value);
+  const litros = parseFloat(litrosInput.value);
+  if (ml && litros) {
+    udsInput.placeholder = Math.floor((litros * 1000) / ml) + ' (calculado)';
+  }
+}
+envaseInput?.addEventListener('input', calcularUds);
+litrosInput?.addEventListener('input', calcularUds);
+
+// Agregar filas dinámicamente
+const container = document.getElementById('ingredientes-container');
+const primeraFila = container.querySelector('.ingrediente-fila').innerHTML;
+
+document.getElementById('btnAgregarFila').addEventListener('click', () => {
+  const div = document.createElement('div');
+  div.className = 'row g-2 mb-2 ingrediente-fila';
+  div.innerHTML = primeraFila;
+  container.appendChild(div);
+  div.querySelector('.btn-eliminar-fila').addEventListener('click', () => div.remove());
+});
+
+// Eliminar filas existentes
+document.querySelectorAll('.btn-eliminar-fila').forEach(btn => {
+  btn.addEventListener('click', () => btn.closest('.ingrediente-fila').remove());
+});
+
+// Mayúsculas en prefijo
+document.querySelector('[name="prefijo_lote"]')?.addEventListener('input', function() {
+  this.value = this.value.toUpperCase();
+});
+</script>
+{% endblock %}

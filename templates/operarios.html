@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}Operarios{% endblock %}
+{% block page_title %}Gestión de Operarios{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr><th>Nombre</th><th>Cédula</th><th>Cargo</th><th>Estado</th><th>Acción</th></tr>
+          </thead>
+          <tbody>
+            {% for op in operarios %}
+            <tr class="{{ '' if op['activo'] else 'table-secondary' }}">
+              <td><strong>{{ op['nombre'] }}</strong></td>
+              <td class="text-muted">{{ op['cedula'] or '—' }}</td>
+              <td>{{ op['cargo'] }}</td>
+              <td>
+                {% if op['activo'] %}<span class="badge bg-success">Activo</span>
+                {% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+              </td>
+              <td>
+                <form method="POST" class="d-inline">
+                  <input type="hidden" name="accion" value="toggle">
+                  <input type="hidden" name="operario_id" value="{{ op['id'] }}">
+                  <button class="btn btn-sm btn-outline-{{ 'danger' if op['activo'] else 'success' }}">
+                    {{ 'Desactivar' if op['activo'] else 'Activar' }}
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center py-4 text-muted">No hay operarios registrados</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-person-plus me-1"></i>Agregar Operario</h6>
+        <form method="POST">
+          <input type="hidden" name="accion" value="nuevo">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Nombre completo <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control form-control-sm" required placeholder="Ej: Juan Pérez">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Cédula / ID</label>
+            <input type="text" name="cedula" class="form-control form-control-sm" placeholder="Opcional">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Cargo</label>
+            <select name="cargo" class="form-select form-select-sm">
+              <option>Operario</option>
+              <option>Jefe de Producción</option>
+              <option>Supervisor</option>
+              <option>Auxiliar</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm w-100">Agregar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

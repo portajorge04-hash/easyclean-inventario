@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}Lotes de Producción{% endblock %}
+{% block page_title %}Lotes de Producción{% endblock %}
+
+{% block content %}
+<!-- Filtros -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form class="row g-2 align-items-end" method="GET">
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Producto</label>
+        <select name="producto" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          {% for p in productos %}
+          <option value="{{ p['id'] }}" {% if filtro_prod==p['id']|string %}selected{% endif %}>{{ p['nombre'] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Fecha</label>
+        <input type="date" name="fecha" class="form-control form-control-sm" value="{{ filtro_fecha }}">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary btn-sm w-100">Filtrar</button>
+      </div>
+      <div class="col-md-2">
+        <a href="/produccion" class="btn btn-outline-secondary btn-sm w-100">Limpiar</a>
+      </div>
+      <div class="col-md-1 text-end">
+        <a href="/produccion/nueva" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Nuevo</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tabla -->
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Producto</th>
+            <th>Fecha</th>
+            <th>Hora</th>
+            <th>Lotes</th>
+            <th>Uds. Prod.</th>
+            <th>Uds. Ingr.</th>
+            <th>Operarios</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lote in lotes %}
+          <tr>
+            <td><code>{{ lote['codigo_lote'] }}</code></td>
+            <td style="font-size:.85rem">{{ lote['producto_nombre'] }}</td>
+            <td>{{ lote['fecha_produccion'] }}</td>
+            <td style="font-size:.82rem">
+              {% if lote['hora_inicio'] %}{{ lote['hora_inicio'] }}{% if lote['hora_fin'] %} – {{ lote['hora_fin'] }}{% endif %}{% else %}—{% endif %}
+            </td>
+            <td class="text-center">{{ lote['num_lotes'] }}</td>
+            <td class="text-center fw-bold">{{ lote['unidades_producidas'] or '—' }}</td>
+            <td class="text-center">{{ lote['unidades_ingresadas'] or '—' }}</td>
+            <td style="font-size:.8rem">{{ lote_ops[lote['id']]|join(', ') or '—' }}</td>
+            <td>
+              {% if lote['estado'] == 'Completado' %}
+                <span class="badge bg-success">Completado</span>
+              {% elif lote['estado'] == 'Parcial' %}
+                <span class="badge bg-warning text-dark">Parcial</span>
+              {% else %}
+                <span class="badge bg-info text-dark">{{ lote['estado'] }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="/produccion/{{ lote['id'] }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="text-center py-5 text-muted">
+              <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+              No hay lotes registrados.
+              <a href="/produccion/nueva">Registrar el primero</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

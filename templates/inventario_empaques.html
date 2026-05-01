@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}Inventario Empaques{% endblock %}
+{% block page_title %}Inventario — Empaques y Envases{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr><th>Empaque / Envase</th><th>Producto</th><th>Stock</th><th>Mínimo</th><th>Estado</th><th>Ajustar</th></tr>
+            </thead>
+            <tbody>
+              {% for emp in empaques %}
+              <tr class="{{ 'stock-bajo' if emp['stock_actual'] <= emp['stock_minimo'] else '' }}">
+                <td><strong>{{ emp['nombre'] }}</strong></td>
+                <td style="font-size:.82rem" class="text-muted">{{ emp['producto_nombre'] or 'General' }}</td>
+                <td>
+                  <span class="{{ 'text-danger fw-bold' if emp['stock_actual'] <= emp['stock_minimo'] else 'fw-bold' }}">
+                    {{ emp['stock_actual'] }}
+                  </span> uds
+                </td>
+                <td class="text-muted">{{ emp['stock_minimo'] }}</td>
+                <td>
+                  {% if emp['stock_actual'] <= 0 %}
+                    <span class="badge bg-danger">Sin stock</span>
+                  {% elif emp['stock_actual'] <= emp['stock_minimo'] %}
+                    <span class="badge bg-warning text-dark">Bajo</span>
+                  {% else %}
+                    <span class="badge bg-success">OK</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-outline-primary"
+                    onclick="abrirAjuste({{ emp['id'] }}, '{{ emp['nombre'] }}', {{ emp['stock_actual'] }})">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-plus-circle me-1"></i>Nuevo Tipo de Empaque</h6>
+        <form method="POST" action="/inventario/empaques/nuevo">
+          <div class="mb-2">
+            <label class="form-label small">Nombre</label>
+            <input type="text" name="nombre" class="form-control form-control-sm" required placeholder="Ej: Tapa rosca 24mm">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Producto</label>
+            <select name="producto_id" class="form-select form-select-sm">
+              <option value="">General</option>
+              {% for p in productos %}
+              <option value="{{ p['id'] }}">{{ p['nombre'] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Stock Mínimo (uds)</label>
+            <input type="number" name="stock_minimo" class="form-control form-control-sm" value="100">
+          </div>
+          <button class="btn btn-primary btn-sm w-100">Agregar</button>
+        </form>
+      </div>
+    </div>
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title"><i class="bi bi-bag-plus me-1"></i>Registrar Compra</h6>
+        <a href="/compras/empaques" class="btn btn-outline-primary btn-sm w-100">
+          <i class="bi bi-plus me-1"></i>Compra de Empaques
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalAjuste" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="POST" action="/inventario/empaques/ajuste">
+        <div class="modal-header">
+          <h6 class="modal-title">Ajustar Stock</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="emp_id" id="ajuste_emp_id">
+          <p class="mb-2"><strong id="ajuste_emp_nombre"></strong></p>
+          <label class="form-label small">Nuevo stock (unidades)</label>
+          <input type="number" name="nuevo_stock" id="ajuste_stock" class="form-control" required>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary btn-sm w-100">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirAjuste(id, nombre, stock) {
+  document.getElementById('ajuste_emp_id').value = id;
+  document.getElementById('ajuste_emp_nombre').textContent = nombre;
+  document.getElementById('ajuste_stock').value = stock;
+  new bootstrap.Modal(document.getElementById('modalAjuste')).show();
+}
+</script>
+{% endblock %}

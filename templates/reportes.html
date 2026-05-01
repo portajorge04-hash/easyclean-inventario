@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Reportes{% endblock %}
+{% block page_title %}Reportes de Producción{% endblock %}
+
+{% block content %}
+<!-- Filtro de mes -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form class="row g-2 align-items-end" method="GET">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Mes</label>
+        <input type="month" name="mes" class="form-control form-control-sm" value="{{ mes }}">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary btn-sm">Ver reporte</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Producción del mes -->
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-bar-chart me-1"></i>Producción del mes: {{ mes }}</h6>
+        {% if produccion_mes %}
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>Producto</th><th>Lotes registrados</th><th>Lotes de 80L</th><th>Uds. Producidas</th><th>Uds. Ingresadas</th></tr>
+            </thead>
+            <tbody>
+              {% for p in produccion_mes %}
+              <tr>
+                <td><strong>{{ p['producto'] }}</strong></td>
+                <td class="text-center">{{ p['lotes'] }}</td>
+                <td class="text-center">{{ p['total_lotes_prod'] }}</td>
+                <td class="text-center"><span class="badge bg-success fs-6">{{ p['total_unidades'] or 0 }}</span></td>
+                <td class="text-center">{{ p['total_ingresadas'] or '—' }}</td>
+              </tr>
+              {% endfor %}
+              <tr class="table-light fw-bold">
+                <td>TOTAL</td>
+                <td class="text-center">{{ produccion_mes|sum(attribute='lotes') }}</td>
+                <td class="text-center">{{ produccion_mes|sum(attribute='total_lotes_prod') }}</td>
+                <td class="text-center">{{ produccion_mes|sum(attribute='total_unidades') }}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3">Sin producción en este mes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Consumo MP -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-flask me-1"></i>Consumo de Materias Primas</h6>
+        {% if consumo_mp_mes %}
+        <table class="table table-sm">
+          <thead><tr><th>Materia Prima</th><th>Total Consumido</th><th>Unidad</th></tr></thead>
+          <tbody>
+            {% for mp in consumo_mp_mes %}
+            <tr>
+              <td>{{ mp['nombre'] }}</td>
+              <td><strong>{{ mp['total'] }}</strong></td>
+              <td>{{ mp['unidad'] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center py-3">Sin datos.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Compras MP -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-cart me-1"></i>Compras de Materias Primas</h6>
+        {% if compras_mp_mes %}
+        <table class="table table-sm">
+          <thead><tr><th>Materia Prima</th><th>Total</th><th>Costo</th></tr></thead>
+          <tbody>
+            {% for c in compras_mp_mes %}
+            <tr>
+              <td>{{ c['nombre'] }}</td>
+              <td><strong>{{ c['total'] }}</strong> {{ c['unidad'] }}</td>
+              <td>{{ ('$'+'{:,.0f}'.format(c['costo'])) if c['costo'] else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center py-3">Sin compras este mes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

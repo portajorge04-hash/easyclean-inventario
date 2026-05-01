@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Detalle Lote{{ lote['codigo_lote'] }}{% endblock %}
+{% block page_title %}Lote: {{ lote['codigo_lote'] }}{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- Info General -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-info-circle me-1"></i>Información General</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" style="width:45%;font-weight:500">Código</th><td><code>{{ lote['codigo_lote'] }}</code></td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Producto</th><td>{{ lote['producto_nombre'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Fecha</th><td>{{ lote['fecha_produccion'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Hora inicio</th><td>{{ lote['hora_inicio'] or '—' }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Hora fin</th><td>{{ lote['hora_fin'] or '—' }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Lotes prod.</th><td>{{ lote['num_lotes'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Uds. prod.</th><td><strong>{{ lote['unidades_producidas'] or '—' }}</strong></td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Uds. ingr.</th><td>{{ lote['unidades_ingresadas'] or '—' }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Estado</th>
+            <td>
+              {% if lote['estado'] == 'Completado' %}<span class="badge bg-success">Completado</span>
+              {% elif lote['estado'] == 'Parcial' %}<span class="badge bg-warning text-dark">Parcial</span>
+              {% else %}<span class="badge bg-info text-dark">{{ lote['estado'] }}</span>{% endif %}
+            </td>
+          </tr>
+          {% if lote['observaciones'] %}
+          <tr><th class="text-muted" style="font-weight:500">Obs.</th><td>{{ lote['observaciones'] }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operarios -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-people me-1"></i>Operarios</h6>
+        {% if operarios %}
+        <ul class="list-group list-group-flush">
+          {% for op in operarios %}
+          <li class="list-group-item px-0 py-2">
+            <i class="bi bi-person me-2 text-muted"></i>{{ op['nombre'] }}
+            <small class="text-muted float-end">{{ op['cargo'] }}</small>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted">Sin operarios registrados.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Empaques -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-box-seam me-1"></i>Empaques Utilizados</h6>
+        {% if consumo_emp %}
+        <ul class="list-group list-group-flush">
+          {% for e in consumo_emp %}
+          <li class="list-group-item px-0 py-2 d-flex justify-content-between">
+            <span>{{ e['nombre'] }}</span>
+            <strong>{{ e['cantidad_usada'] }} uds</strong>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted">No se registraron empaques.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Consumo MP -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-flask me-1"></i>Materias Primas Consumidas</h6>
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>Materia Prima</th><th>Cantidad Usada</th><th>Unidad</th></tr>
+            </thead>
+            <tbody>
+              {% for mp in consumo_mp %}
+              <tr>
+                <td>{{ mp['nombre'] }}</td>
+                <td><strong>{{ mp['cantidad_usada'] }}</strong></td>
+                <td>{{ mp['unidad'] }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="3" class="text-muted text-center">Sin consumo registrado</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mt-3">
+  <a href="/produccion" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+</div>
+{% endblock %}

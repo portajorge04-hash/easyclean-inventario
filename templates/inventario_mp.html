@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}Inventario Materias Primas{% endblock %}
+{% block page_title %}Inventario — Materias Primas{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- Tabla de stock -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Materia Prima</th>
+                <th>Stock Actual</th>
+                <th>Unidad</th>
+                <th>Stock Mínimo</th>
+                <th>Estado</th>
+                <th>Ajustar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for mp in mps %}
+              <tr class="{{ 'stock-bajo' if mp['stock_actual'] <= mp['stock_minimo'] else '' }}">
+                <td><strong>{{ mp['nombre'] }}</strong></td>
+                <td>
+                  <span class="{{ 'text-danger fw-bold' if mp['stock_actual'] <= mp['stock_minimo'] else 'fw-bold' }}">
+                    {{ mp['stock_actual'] }}
+                  </span>
+                </td>
+                <td>{{ mp['unidad'] }}</td>
+                <td class="text-muted">{{ mp['stock_minimo'] }}</td>
+                <td>
+                  {% if mp['stock_actual'] <= 0 %}
+                    <span class="badge bg-danger">Sin stock</span>
+                  {% elif mp['stock_actual'] <= mp['stock_minimo'] %}
+                    <span class="badge bg-warning text-dark">Bajo</span>
+                  {% else %}
+                    <span class="badge bg-success">OK</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-outline-primary"
+                    onclick="abrirAjuste({{ mp['id'] }}, '{{ mp['nombre'] }}', {{ mp['stock_actual'] }}, '{{ mp['unidad'] }}')">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agregar nueva MP -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-plus-circle me-1"></i>Nueva Materia Prima</h6>
+        <form method="POST" action="/inventario/mp/nueva">
+          <div class="mb-2">
+            <label class="form-label small">Nombre</label>
+            <input type="text" name="nombre" class="form-control form-control-sm" required placeholder="Ej: Tensoactivo X">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Unidad</label>
+            <select name="unidad" class="form-select form-select-sm">
+              <option>kg</option>
+              <option>g</option>
+              <option>L</option>
+              <option>ml</option>
+              <option>und</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Stock Mínimo</label>
+            <input type="number" name="stock_minimo" class="form-control form-control-sm" value="5" step="0.1">
+          </div>
+          <button class="btn btn-primary btn-sm w-100">Agregar</button>
+        </form>
+      </div>
+    </div>
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title"><i class="bi bi-cart me-1"></i>Registrar Compra</h6>
+        <p class="text-muted small">Para aumentar el stock, ve a la sección de compras.</p>
+        <a href="/compras/mp" class="btn btn-outline-primary btn-sm w-100">
+          <i class="bi bi-plus me-1"></i>Registrar Compra MP
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ajuste -->
+<div class="modal fade" id="modalAjuste" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="POST" action="/inventario/mp/ajuste">
+        <div class="modal-header">
+          <h6 class="modal-title">Ajustar Stock</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="mp_id" id="ajuste_mp_id">
+          <p class="mb-2"><strong id="ajuste_mp_nombre"></strong></p>
+          <label class="form-label small">Nuevo stock (<span id="ajuste_unidad"></span>)</label>
+          <input type="number" name="nuevo_stock" id="ajuste_stock" class="form-control" step="0.001" required>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary btn-sm w-100">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirAjuste(id, nombre, stock, unidad) {
+  document.getElementById('ajuste_mp_id').value = id;
+  document.getElementById('ajuste_mp_nombre').textContent = nombre;
+  document.getElementById('ajuste_stock').value = stock;
+  document.getElementById('ajuste_unidad').textContent = unidad;
+  new bootstrap.Modal(document.getElementById('modalAjuste')).show();
+}
+</script>
+{% endblock %}
