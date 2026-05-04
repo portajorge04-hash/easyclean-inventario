@@ -879,6 +879,142 @@ def compras_bodega():
     db.close()
     return render_template('compras_bodega.html', articulos=articulos, compras=compras, hoy=hoy)
 
+# ─── Editar / Eliminar Compras ────────────────────────────────────────────────
+
+@app.route('/compras/mp/<int:cid>/eliminar', methods=['POST'])
+@admin_required
+def eliminar_compra_mp(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM compras_mp WHERE id=?", (cid,)).fetchone()
+    if c:
+        db.execute("UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id=?",
+                   (c['cantidad'], c['materia_prima_id']))
+        db.execute("DELETE FROM compras_mp WHERE id=?", (cid,))
+        db.commit()
+        flash(f'Compra eliminada. Stock revertido en {c["cantidad"]} {c["unidad"]}.', 'info')
+    db.close()
+    return redirect(url_for('compras_mp'))
+
+@app.route('/compras/mp/<int:cid>/editar', methods=['POST'])
+@admin_required
+def editar_compra_mp(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM compras_mp WHERE id=?", (cid,)).fetchone()
+    if c:
+        nueva_cant = float(request.form['cantidad'])
+        diferencia  = nueva_cant - float(c['cantidad'])
+        db.execute("""
+            UPDATE compras_mp SET fecha=?, cantidad=?, proveedor=?,
+            precio_unitario=?, precio_total=?, numero_factura=?, observaciones=?
+            WHERE id=?
+        """, (
+            request.form['fecha'], nueva_cant,
+            request.form.get('proveedor', ''),
+            request.form.get('precio_unitario') or None,
+            request.form.get('precio_total') or None,
+            request.form.get('numero_factura', ''),
+            request.form.get('observaciones', ''),
+            cid
+        ))
+        if diferencia != 0:
+            db.execute("UPDATE materias_primas SET stock_actual = stock_actual + ? WHERE id=?",
+                       (diferencia, c['materia_prima_id']))
+        db.commit()
+        flash('Compra de MP actualizada. Stock ajustado.', 'success')
+    db.close()
+    return redirect(url_for('compras_mp'))
+
+@app.route('/compras/empaques/<int:cid>/eliminar', methods=['POST'])
+@admin_required
+def eliminar_compra_empaque(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM compras_empaque WHERE id=?", (cid,)).fetchone()
+    if c:
+        db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?",
+                   (c['cantidad'], c['tipo_empaque_id']))
+        db.execute("DELETE FROM compras_empaque WHERE id=?", (cid,))
+        db.commit()
+        flash(f'Compra eliminada. Stock de empaque revertido en {c["cantidad"]} uds.', 'info')
+    db.close()
+    return redirect(url_for('compras_empaques'))
+
+@app.route('/compras/empaques/<int:cid>/editar', methods=['POST'])
+@admin_required
+def editar_compra_empaque(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM compras_empaque WHERE id=?", (cid,)).fetchone()
+    if c:
+        nueva_cant = int(request.form['cantidad'])
+        diferencia  = nueva_cant - int(c['cantidad'])
+        db.execute("""
+            UPDATE compras_empaque SET fecha=?, cantidad=?, proveedor=?,
+            precio_unitario=?, precio_total=?, numero_factura=?, observaciones=?
+            WHERE id=?
+        """, (
+            request.form['fecha'], nueva_cant,
+            request.form.get('proveedor', ''),
+            request.form.get('precio_unitario') or None,
+            request.form.get('precio_total') or None,
+            request.form.get('numero_factura', ''),
+            request.form.get('observaciones', ''),
+            cid
+        ))
+        if diferencia != 0:
+            db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
+                       (diferencia, c['tipo_empaque_id']))
+        db.commit()
+        flash('Compra de empaque actualizada. Stock ajustado.', 'success')
+    db.close()
+    return redirect(url_for('compras_empaques'))
+
+@app.route('/compras/bodega/<int:cid>/eliminar', methods=['POST'])
+@admin_required
+def eliminar_compra_bodega(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM compras_bodega WHERE id=?", (cid,)).fetchone()
+    if c:
+        db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual - ? WHERE id=?",
+                   (c['cantidad'], c['articulo_id']))
+        db.execute("""
+            INSERT INTO movimientos_bodega (articulo_id, tipo, cantidad, fecha, motivo, responsable)
+            VALUES (?,?,?,?,?,?)
+        """, (c['articulo_id'], 'Anulación', c['cantidad'],
+              date.today().isoformat(), 'Anulación de compra', session.get('nombre', '')))
+        db.execute("DELETE FROM compras_bodega WHERE id=?", (cid,))
+        db.commit()
+        flash(f'Compra eliminada. Stock revertido en {c["cantidad"]} uds.', 'info')
+    db.close()
+    return redirect(url_for('compras_bodega'))
+
+@app.route('/compras/bodega/<int:cid>/editar', methods=['POST'])
+@admin_required
+def editar_compra_bodega(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM compras_bodega WHERE id=?", (cid,)).fetchone()
+    if c:
+        nueva_cant = int(request.form['cantidad'])
+        diferencia  = nueva_cant - int(c['cantidad'])
+        db.execute("""
+            UPDATE compras_bodega SET fecha=?, cantidad=?, proveedor=?,
+            precio_unitario=?, precio_total=?, numero_factura=?, observaciones=?
+            WHERE id=?
+        """, (
+            request.form['fecha'], nueva_cant,
+            request.form.get('proveedor', ''),
+            request.form.get('precio_unitario') or None,
+            request.form.get('precio_total') or None,
+            request.form.get('numero_factura', ''),
+            request.form.get('observaciones', ''),
+            cid
+        ))
+        if diferencia != 0:
+            db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual + ? WHERE id=?",
+                       (diferencia, c['articulo_id']))
+        db.commit()
+        flash('Compra de bodega actualizada. Stock ajustado.', 'success')
+    db.close()
+    return redirect(url_for('compras_bodega'))
+
 # ─── Admin / Respaldo ─────────────────────────────────────────────────────────
 
 @app.route('/admin/estado')

@@ -27,11 +27,7 @@
             <div class="col-5">
               <label class="form-label small fw-semibold">Unidad</label>
               <select name="unidad" class="form-select form-select-sm">
-                <option>kg</option>
-                <option>g</option>
-                <option>L</option>
-                <option>ml</option>
-                <option>und</option>
+                <option>kg</option><option>g</option><option>L</option><option>ml</option><option>und</option>
               </select>
             </div>
           </div>
@@ -41,7 +37,7 @@
           </div>
           <div class="mb-2">
             <label class="form-label small fw-semibold">Proveedor</label>
-            <input type="text" name="proveedor" class="form-control form-control-sm" placeholder="Nombre del proveedor">
+            <input type="text" name="proveedor" class="form-control form-control-sm">
           </div>
           <div class="row g-2 mb-2">
             <div class="col-6">
@@ -79,7 +75,11 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0">
             <thead>
-              <tr><th>Fecha</th><th>Materia Prima</th><th>Cantidad</th><th>Proveedor</th><th>Total</th><th>Factura</th></tr>
+              <tr>
+                <th>Fecha</th><th>Materia Prima</th><th>Cantidad</th>
+                <th>Proveedor</th><th>Total</th><th>Factura</th>
+                {% if session.get('rol') == 'admin' %}<th></th>{% endif %}
+              </tr>
             </thead>
             <tbody>
               {% for c in compras %}
@@ -90,9 +90,30 @@
                 <td style="font-size:.82rem" class="text-muted">{{ c['proveedor'] or '—' }}</td>
                 <td>{{ ('$'+'{:,.0f}'.format(c['precio_total'])) if c['precio_total'] else '—' }}</td>
                 <td style="font-size:.78rem" class="text-muted">{{ c['numero_factura'] or '—' }}</td>
+                {% if session.get('rol') == 'admin' %}
+                <td style="white-space:nowrap">
+                  <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="Editar"
+                    data-cid="{{ c['id'] }}"
+                    data-fecha="{{ c['fecha'] }}"
+                    data-cantidad="{{ c['cantidad'] }}"
+                    data-proveedor="{{ c['proveedor'] or '' }}"
+                    data-precio-u="{{ c['precio_unitario'] or '' }}"
+                    data-precio-t="{{ c['precio_total'] or '' }}"
+                    data-factura="{{ c['numero_factura'] or '' }}"
+                    data-obs="{{ c['observaciones'] or '' }}"
+                    data-nombre="{{ c['mp_nombre'] }} ({{ c['unidad'] }})"
+                    onclick="abrirEditar(this)">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button class="btn btn-outline-danger btn-sm py-0 px-1 ms-1" title="Eliminar"
+                    onclick="abrirEliminar({{ c['id'] }}, '{{ c['mp_nombre'] }} — {{ c['cantidad'] }} {{ c['unidad'] }} — {{ c['fecha'] }}')">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+                {% endif %}
               </tr>
               {% else %}
-              <tr><td colspan="6" class="text-center py-4 text-muted">Sin compras registradas</td></tr>
+              <tr><td colspan="7" class="text-center py-4 text-muted">Sin compras registradas</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -101,4 +122,108 @@
     </div>
   </div>
 </div>
+
+<!-- ── Modal Editar ──────────────────────────────────────── -->
+<div class="modal fade" id="modalEditar" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="tituloEditar">Editar compra</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="formEditar">
+        <div class="modal-body">
+          <div class="alert alert-info py-2 mb-3" style="font-size:.82rem">
+            <i class="bi bi-info-circle me-1"></i>
+            Si cambias la <strong>cantidad</strong>, el stock se ajusta automáticamente con la diferencia.
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Fecha <span class="text-danger">*</span></label>
+              <input type="date" id="eFecha" name="fecha" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Cantidad <span class="text-danger">*</span></label>
+              <input type="number" id="eCantidad" name="cantidad" class="form-control form-control-sm" step="0.001" min="0.001" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Proveedor</label>
+            <input type="text" id="eProveedor" name="proveedor" class="form-control form-control-sm">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Precio Unitario</label>
+              <input type="number" id="ePrecioU" name="precio_unitario" class="form-control form-control-sm" step="0.01">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Precio Total</label>
+              <input type="number" id="ePrecioT" name="precio_total" class="form-control form-control-sm" step="0.01">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Nº Factura</label>
+            <input type="text" id="eFactura" name="numero_factura" class="form-control form-control-sm">
+          </div>
+          <div class="mb-0">
+            <label class="form-label small fw-semibold">Observaciones</label>
+            <textarea id="eObs" name="observaciones" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-circle me-1"></i>Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal Eliminar ────────────────────────────────────── -->
+<div class="modal fade" id="modalEliminar" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-0">
+        <h6 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Eliminar compra</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <p class="mb-1" style="font-size:.88rem" id="textoEliminar"></p>
+        <p class="text-danger mb-0" style="font-size:.82rem">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>El stock se revertirá automáticamente.
+        </p>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <form method="POST" id="formEliminar" style="display:inline">
+          <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash me-1"></i>Sí, eliminar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirEditar(btn) {
+  const d = btn.dataset;
+  document.getElementById('tituloEditar').textContent = 'Editar compra: ' + d.nombre;
+  document.getElementById('eFecha').value     = d.fecha;
+  document.getElementById('eCantidad').value  = d.cantidad;
+  document.getElementById('eProveedor').value = d.proveedor;
+  document.getElementById('ePrecioU').value   = d.precioU;
+  document.getElementById('ePrecioT').value   = d.precioT;
+  document.getElementById('eFactura').value   = d.factura;
+  document.getElementById('eObs').value       = d.obs;
+  document.getElementById('formEditar').action = '/compras/mp/' + d.cid + '/editar';
+  new bootstrap.Modal(document.getElementById('modalEditar')).show();
+}
+function abrirEliminar(cid, desc) {
+  document.getElementById('textoEliminar').textContent = desc;
+  document.getElementById('formEliminar').action = '/compras/mp/' + cid + '/eliminar';
+  new bootstrap.Modal(document.getElementById('modalEliminar')).show();
+}
+</script>
 {% endblock %}
