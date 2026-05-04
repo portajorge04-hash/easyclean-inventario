@@ -78,6 +78,7 @@ def admin_usuarios():
                     "INSERT INTO usuarios (username, password_hash, nombre, rol) VALUES (?,?,?,?)",
                     (username, generate_password_hash(password), nombre, rol)
                 )
+                registrar_log(db, 'Nuevo usuario', 'Usuarios', f'{username} ({rol})')
                 db.commit()
                 flash(f'Usuario "{username}" creado correctamente.', 'success')
         elif accion == 'toggle':
@@ -85,14 +86,19 @@ def admin_usuarios():
             if int(uid) == session['user_id']:
                 flash('No puedes desactivar tu propia cuenta.', 'warning')
             else:
+                u = db.execute("SELECT username, activo FROM usuarios WHERE id=?", (uid,)).fetchone()
                 db.execute("UPDATE usuarios SET activo = 1 - activo WHERE id=?", (uid,))
+                estado = 'desactivado' if u['activo'] else 'activado'
+                registrar_log(db, f'Usuario {estado}', 'Usuarios', u['username'])
                 db.commit()
                 flash('Estado del usuario actualizado.', 'info')
         elif accion == 'cambiar_password':
             uid       = request.form['usuario_id']
             nueva_pw  = request.form['nueva_password']
+            u = db.execute("SELECT username FROM usuarios WHERE id=?", (uid,)).fetchone()
             db.execute("UPDATE usuarios SET password_hash=? WHERE id=?",
                        (generate_password_hash(nueva_pw), uid))
+            registrar_log(db, 'Cambio contraseña', 'Usuarios', u['username'])
             db.commit()
             flash('Contraseña actualizada.', 'success')
         db.close()
@@ -107,6 +113,15 @@ def inject_now():
     return {'now': datetime.now(), 'session': session}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def registrar_log(db, accion, modulo, descripcion):
+    try:
+        db.execute(
+            "INSERT INTO log_actividad (usuario, accion, modulo, descripcion) VALUES (?,?,?,?)",
+            (session.get('nombre', 'sistema'), accion, modulo, descripcion)
+        )
+    except Exception:
+        pass  # nunca interrumpir la operación principal por un fallo de log
 
 def generar_codigo_lote(producto_id, db):
     prod = db.execute("SELECT nombre, prefijo_lote FROM productos WHERE id=?", (producto_id,)).fetchone()
@@ -306,6 +321,7 @@ def produccion_nueva():
                     (int(cant), emp_id)
                 )
 
+        registrar_log(db, 'Nuevo lote', 'Producción', f'Lote {codigo} — {prod["nombre"]} × {num_lotes}')
         db.commit()
         flash(f'Lote {codigo} registrado correctamente.', 'success')
         db.close()
@@ -379,7 +395,9 @@ def ajuste_mp():
     db = get_db()
     mp_id = request.form['mp_id']
     nuevo_stock = float(request.form['nuevo_stock'])
+    mp = db.execute("SELECT nombre FROM materias_primas WHERE id=?", (mp_id,)).fetchone()
     db.execute("UPDATE materias_primas SET stock_actual=? WHERE id=?", (nuevo_stock, mp_id))
+    registrar_log(db, 'Ajuste stock', 'Inventario MP', f'{mp["nombre"]} → {nuevo_stock}')
     db.commit()
     flash('Stock actualizado.', 'success')
     db.close()
@@ -394,6 +412,7 @@ def nueva_mp():
     stock_minimo = float(request.form.get('stock_minimo', 5))
     db.execute("INSERT INTO materias_primas (nombre, unidad, stock_minimo) VALUES (?,?,?)",
                (nombre, unidad, stock_minimo))
+    registrar_log(db, 'Nueva MP', 'Inventario MP', f'{nombre} ({unidad})')
     db.commit()
     flash('Materia prima agregada.', 'success')
     db.close()
@@ -419,7 +438,9 @@ def ajuste_empaque():
     db = get_db()
     emp_id = request.form['emp_id']
     nuevo_stock = int(request.form['nuevo_stock'])
+    emp = db.execute("SELECT nombre FROM tipos_empaque WHERE id=?", (emp_id,)).fetchone()
     db.execute("UPDATE tipos_empaque SET stock_actual=? WHERE id=?", (nuevo_stock, emp_id))
+    registrar_log(db, 'Ajuste stock', 'Empaques', f'{emp["nombre"]} → {nuevo_stock}')
     db.commit()
     flash('Stock de empaque actualizado.', 'success')
     db.close()
@@ -434,6 +455,7 @@ def nuevo_empaque():
     stock_minimo = int(request.form.get('stock_minimo', 100))
     db.execute("INSERT INTO tipos_empaque (nombre, producto_id, stock_minimo) VALUES (?,?,?)",
                (nombre, producto_id, stock_minimo))
+    registrar_log(db, 'Nuevo empaque', 'Empaques', nombre)
     db.commit()
     flash('Empaque agregado.', 'success')
     db.close()
@@ -467,6 +489,8 @@ def compras_mp():
 
         db.execute("UPDATE materias_primas SET stock_actual = stock_actual + ? WHERE id=?",
                    (cantidad, mp_id))
+        mp_nombre = db.execute("SELECT nombre FROM materias_primas WHERE id=?", (mp_id,)).fetchone()['nombre']
+        registrar_log(db, 'Nueva compra', 'Compras MP', f'{mp_nombre} — {cantidad} {unidad} — {fecha}')
         db.commit()
         flash('Compra registrada y stock actualizado.', 'success')
         db.close()
@@ -509,6 +533,8 @@ def compras_empaques():
 
         db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
                    (cantidad, emp_id))
+        emp_nombre = db.execute("SELECT nombre FROM tipos_empaque WHERE id=?", (emp_id,)).fetchone()['nombre']
+        registrar_log(db, 'Nueva compra', 'Compras Empaques', f'{emp_nombre} — {cantidad} uds — {fecha}')
         db.commit()
         flash('Compra de empaque registrada.', 'success')
         db.close()
@@ -540,12 +566,17 @@ def operarios():
             return redirect(url_for('operarios'))
         accion = request.form.get('accion')
         if accion == 'nuevo':
+            nombre_op = request.form['nombre']
             db.execute("INSERT INTO operarios (nombre, cedula, cargo) VALUES (?,?,?)",
-                       (request.form['nombre'], request.form.get('cedula', ''), request.form.get('cargo', 'Operario')))
+                       (nombre_op, request.form.get('cedula', ''), request.form.get('cargo', 'Operario')))
+            registrar_log(db, 'Nuevo operario', 'Operarios', nombre_op)
             flash('Operario agregado.', 'success')
         elif accion == 'toggle':
             op_id = request.form['operario_id']
+            op = db.execute("SELECT nombre, activo FROM operarios WHERE id=?", (op_id,)).fetchone()
             db.execute("UPDATE operarios SET activo = 1 - activo WHERE id=?", (op_id,))
+            estado = 'desactivado' if op['activo'] else 'activado'
+            registrar_log(db, f'Operario {estado}', 'Operarios', op['nombre'])
             flash('Estado del operario actualizado.', 'info')
         db.commit()
         db.close()
@@ -782,8 +813,9 @@ def bodega_entrada():
           request.form.get('responsable', ''),
           request.form.get('observaciones', '')))
     db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual + ? WHERE id=?", (cantidad, art_id))
-    db.commit()
     art = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (art_id,)).fetchone()
+    registrar_log(db, 'Entrada bodega', 'Bodega', f'+{cantidad} {art["nombre"]}')
+    db.commit()
     flash(f'Entrada registrada: +{cantidad} {art["nombre"]}.', 'success')
     db.close()
     return redirect(url_for('bodega'))
@@ -810,6 +842,7 @@ def bodega_salida():
           request.form.get('responsable', ''),
           request.form.get('observaciones', '')))
     db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual - ? WHERE id=?", (cantidad, art_id))
+    registrar_log(db, 'Salida bodega', 'Bodega', f'-{cantidad} {art["nombre"]}')
     db.commit()
     flash(f'Salida registrada: -{cantidad} {art["nombre"]}.', 'success')
     db.close()
@@ -821,7 +854,9 @@ def bodega_ajuste():
     db = get_db()
     art_id = int(request.form['articulo_id'])
     nuevo  = int(request.form['nuevo_stock'])
+    art_n = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (art_id,)).fetchone()['nombre']
     db.execute("UPDATE articulos_bodega SET stock_actual=? WHERE id=?", (nuevo, art_id))
+    registrar_log(db, 'Ajuste bodega', 'Bodega', f'{art_n} → {nuevo}')
     db.commit()
     flash('Stock ajustado correctamente.', 'info')
     db.close()
@@ -862,6 +897,8 @@ def compras_bodega():
                    (cantidad, art_id))
         db.commit()
         art = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (art_id,)).fetchone()
+        registrar_log(db, 'Nueva compra', 'Compras Bodega', f'{art["nombre"]} — {cantidad} uds — {fecha}')
+        db.commit()
         flash(f'Compra registrada: +{cantidad} {art["nombre"]}.', 'success')
         db.close()
         return redirect(url_for('compras_bodega'))
@@ -889,7 +926,9 @@ def eliminar_compra_mp(cid):
     if c:
         db.execute("UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id=?",
                    (c['cantidad'], c['materia_prima_id']))
+        mp_n = db.execute("SELECT nombre FROM materias_primas WHERE id=?", (c['materia_prima_id'],)).fetchone()['nombre']
         db.execute("DELETE FROM compras_mp WHERE id=?", (cid,))
+        registrar_log(db, 'Eliminar compra', 'Compras MP', f'{mp_n} — {c["cantidad"]} {c["unidad"]} — {c["fecha"]}')
         db.commit()
         flash(f'Compra eliminada. Stock revertido en {c["cantidad"]} {c["unidad"]}.', 'info')
     db.close()
@@ -919,6 +958,8 @@ def editar_compra_mp(cid):
         if diferencia != 0:
             db.execute("UPDATE materias_primas SET stock_actual = stock_actual + ? WHERE id=?",
                        (diferencia, c['materia_prima_id']))
+        mp_n = db.execute("SELECT nombre FROM materias_primas WHERE id=?", (c['materia_prima_id'],)).fetchone()['nombre']
+        registrar_log(db, 'Editar compra', 'Compras MP', f'{mp_n} — cantidad: {c["cantidad"]}→{nueva_cant}')
         db.commit()
         flash('Compra de MP actualizada. Stock ajustado.', 'success')
     db.close()
@@ -932,7 +973,9 @@ def eliminar_compra_empaque(cid):
     if c:
         db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?",
                    (c['cantidad'], c['tipo_empaque_id']))
+        emp_n = db.execute("SELECT nombre FROM tipos_empaque WHERE id=?", (c['tipo_empaque_id'],)).fetchone()['nombre']
         db.execute("DELETE FROM compras_empaque WHERE id=?", (cid,))
+        registrar_log(db, 'Eliminar compra', 'Compras Empaques', f'{emp_n} — {c["cantidad"]} uds — {c["fecha"]}')
         db.commit()
         flash(f'Compra eliminada. Stock de empaque revertido en {c["cantidad"]} uds.', 'info')
     db.close()
@@ -962,6 +1005,8 @@ def editar_compra_empaque(cid):
         if diferencia != 0:
             db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
                        (diferencia, c['tipo_empaque_id']))
+        emp_n = db.execute("SELECT nombre FROM tipos_empaque WHERE id=?", (c['tipo_empaque_id'],)).fetchone()['nombre']
+        registrar_log(db, 'Editar compra', 'Compras Empaques', f'{emp_n} — cantidad: {c["cantidad"]}→{nueva_cant}')
         db.commit()
         flash('Compra de empaque actualizada. Stock ajustado.', 'success')
     db.close()
@@ -980,7 +1025,9 @@ def eliminar_compra_bodega(cid):
             VALUES (?,?,?,?,?,?)
         """, (c['articulo_id'], 'Anulación', c['cantidad'],
               date.today().isoformat(), 'Anulación de compra', session.get('nombre', '')))
+        art_n = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (c['articulo_id'],)).fetchone()['nombre']
         db.execute("DELETE FROM compras_bodega WHERE id=?", (cid,))
+        registrar_log(db, 'Eliminar compra', 'Compras Bodega', f'{art_n} — {c["cantidad"]} uds — {c["fecha"]}')
         db.commit()
         flash(f'Compra eliminada. Stock revertido en {c["cantidad"]} uds.', 'info')
     db.close()
@@ -1010,10 +1057,34 @@ def editar_compra_bodega(cid):
         if diferencia != 0:
             db.execute("UPDATE articulos_bodega SET stock_actual = stock_actual + ? WHERE id=?",
                        (diferencia, c['articulo_id']))
+        art_n = db.execute("SELECT nombre FROM articulos_bodega WHERE id=?", (c['articulo_id'],)).fetchone()['nombre']
+        registrar_log(db, 'Editar compra', 'Compras Bodega', f'{art_n} — cantidad: {c["cantidad"]}→{nueva_cant}')
         db.commit()
         flash('Compra de bodega actualizada. Stock ajustado.', 'success')
     db.close()
     return redirect(url_for('compras_bodega'))
+
+# ─── Registro de Actividad ────────────────────────────────────────────────────
+
+@app.route('/admin/actividad')
+def admin_actividad():
+    db = get_db()
+    modulo = request.args.get('modulo', '')
+    usuario = request.args.get('usuario', '')
+    q = "SELECT * FROM log_actividad WHERE 1=1"
+    params = []
+    if modulo:
+        q += " AND modulo=?"; params.append(modulo)
+    if usuario:
+        q += " AND usuario=?"; params.append(usuario)
+    q += " ORDER BY id DESC LIMIT 200"
+    logs = db.execute(q, params).fetchall()
+    modulos = db.execute("SELECT DISTINCT modulo FROM log_actividad ORDER BY modulo").fetchall()
+    usuarios = db.execute("SELECT DISTINCT usuario FROM log_actividad ORDER BY usuario").fetchall()
+    db.close()
+    return render_template('admin_actividad.html', logs=logs,
+                           modulos=modulos, usuarios=usuarios,
+                           filtro_modulo=modulo, filtro_usuario=usuario)
 
 # ─── Admin / Respaldo ─────────────────────────────────────────────────────────
 

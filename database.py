@@ -277,6 +277,14 @@ SCHEMA_SQLITE = '''
         activo INTEGER DEFAULT 1,
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS log_actividad (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT,
+        accion TEXT NOT NULL,
+        modulo TEXT NOT NULL,
+        descripcion TEXT,
+        fecha_hora TEXT DEFAULT CURRENT_TIMESTAMP
+    );
 '''
 
 SCHEMA_PG = '''
@@ -423,6 +431,14 @@ SCHEMA_PG = '''
         rol TEXT DEFAULT 'viewer',
         activo INTEGER DEFAULT 1,
         creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS log_actividad (
+        id SERIAL PRIMARY KEY,
+        usuario TEXT,
+        accion TEXT NOT NULL,
+        modulo TEXT NOT NULL,
+        descripcion TEXT,
+        fecha_hora TEXT DEFAULT CURRENT_TIMESTAMP
     );
 '''
 

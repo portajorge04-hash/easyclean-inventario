@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Registro de Actividad{% endblock %}
+{% block page_title %}Registro de Actividad{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body p-0">
+
+    <!-- Filtros -->
+    <div class="px-3 py-2 border-bottom d-flex flex-wrap align-items-center gap-2">
+      <i class="bi bi-journal-text text-primary"></i>
+      <span class="fw-semibold me-2" style="font-size:.88rem">Últimas 200 acciones</span>
+      <form method="GET" class="d-flex gap-2 ms-auto flex-wrap">
+        <select name="modulo" class="form-select form-select-sm" style="min-width:160px" onchange="this.form.submit()">
+          <option value="">— Todos los módulos —</option>
+          {% for m in modulos %}
+          <option value="{{ m['modulo'] }}" {% if filtro_modulo == m['modulo'] %}selected{% endif %}>{{ m['modulo'] }}</option>
+          {% endfor %}
+        </select>
+        <select name="usuario" class="form-select form-select-sm" style="min-width:140px" onchange="this.form.submit()">
+          <option value="">— Todos los usuarios —</option>
+          {% for u in usuarios %}
+          <option value="{{ u['usuario'] }}" {% if filtro_usuario == u['usuario'] %}selected{% endif %}>{{ u['usuario'] }}</option>
+          {% endfor %}
+        </select>
+        {% if filtro_modulo or filtro_usuario %}
+        <a href="/admin/actividad" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x-circle me-1"></i>Limpiar
+        </a>
+        {% endif %}
+      </form>
+    </div>
+
+    <!-- Tabla -->
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th style="width:150px">Fecha y hora</th>
+            <th style="width:110px">Usuario</th>
+            <th style="width:140px">Módulo</th>
+            <th style="width:160px">Acción</th>
+            <th>Detalle</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td style="font-size:.78rem;white-space:nowrap" class="text-muted">
+              {{ log['fecha_hora'][:19] if log['fecha_hora'] else '—' }}
+            </td>
+            <td>
+              <span class="badge bg-light text-dark border" style="font-size:.72rem">
+                <i class="bi bi-person me-1"></i>{{ log['usuario'] or '—' }}
+              </span>
+            </td>
+            <td>
+              {% set modulo = log['modulo'] %}
+              {% if 'Producción' in modulo %}
+                <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:.72rem">{{ modulo }}</span>
+              {% elif 'Compras' in modulo %}
+                <span class="badge" style="background:#f0fdf4;color:#15803d;font-size:.72rem">{{ modulo }}</span>
+              {% elif 'Bodega' in modulo %}
+                <span class="badge" style="background:#fefce8;color:#a16207;font-size:.72rem">{{ modulo }}</span>
+              {% elif 'Inventario' in modulo or 'Empaques' in modulo %}
+                <span class="badge" style="background:#faf5ff;color:#7c3aed;font-size:.72rem">{{ modulo }}</span>
+              {% elif 'Usuarios' in modulo %}
+                <span class="badge" style="background:#fff1f2;color:#be123c;font-size:.72rem">{{ modulo }}</span>
+              {% else %}
+                <span class="badge bg-secondary" style="font-size:.72rem">{{ modulo }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% set accion = log['accion'] %}
+              {% if 'Eliminar' in accion %}
+                <span class="text-danger fw-semibold" style="font-size:.82rem">
+                  <i class="bi bi-trash me-1"></i>{{ accion }}
+                </span>
+              {% elif 'Editar' in accion %}
+                <span class="text-warning fw-semibold" style="font-size:.82rem">
+                  <i class="bi bi-pencil me-1"></i>{{ accion }}
+                </span>
+              {% elif 'Nueva' in accion or 'Nuevo' in accion %}
+                <span class="text-success fw-semibold" style="font-size:.82rem">
+                  <i class="bi bi-plus-circle me-1"></i>{{ accion }}
+                </span>
+              {% else %}
+                <span style="font-size:.82rem">{{ accion }}</span>
+              {% endif %}
+            </td>
+            <td style="font-size:.82rem" class="text-muted">{{ log['descripcion'] or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center py-5 text-muted">
+              <i class="bi bi-journal-x d-block mb-2" style="font-size:2rem"></i>
+              Sin actividad registrada aún
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
