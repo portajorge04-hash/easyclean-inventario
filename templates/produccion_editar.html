@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% block title %}Editar Lote {{ lote['codigo_lote'] }}{% endblock %}
+{% block page_title %}Editar Lote — {{ lote['codigo_lote'] }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <a href="{{ url_for('produccion_lista') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Volver
+  </a>
+  <span class="text-muted small">
+    Editando lote <strong>{{ lote['codigo_lote'] }}</strong> · {{ lote['producto_nombre'] }}
+  </span>
+</div>
+
+<div class="alert alert-warning py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-exclamation-triangle-fill me-1"></i>
+  <strong>Atención:</strong> Si modificas el <strong>Núm. de Lotes</strong>, el sistema
+  ajustará automáticamente el stock de materias primas y empaques.
+  Los demás campos no afectan el inventario.
+</div>
+
+<form method="POST" action="{{ url_for('editar_lote', lote_id=lote['id']) }}">
+
+  <div class="row g-3">
+
+    {# ── Columna izquierda: datos del lote ── #}
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header py-2">
+          <strong class="small text-uppercase" style="color:#64748b;letter-spacing:.06em">
+            <i class="bi bi-clipboard-data me-1"></i>Datos del Lote
+          </strong>
+        </div>
+        <div class="card-body">
+
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Fecha de Producción *</label>
+              <input type="date" name="fecha_produccion" class="form-control form-control-sm"
+                     value="{{ lote['fecha_produccion'] }}" required>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Estado</label>
+              <select name="estado" class="form-select form-select-sm">
+                {% for opt in ['Completado', 'En proceso', 'Pendiente', 'Cancelado'] %}
+                <option value="{{ opt }}" {% if lote['estado'] == opt %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Hora Inicio</label>
+              <input type="time" name="hora_inicio" class="form-control form-control-sm"
+                     value="{{ lote['hora_inicio'] or '' }}">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Hora Fin</label>
+              <input type="time" name="hora_fin" class="form-control form-control-sm"
+                     value="{{ lote['hora_fin'] or '' }}">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">
+                Núm. de Lotes
+                <span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;font-weight:600">⚠ ajusta stock</span>
+              </label>
+              <input type="number" name="num_lotes" id="numLotes" class="form-control form-control-sm"
+                     value="{{ lote['num_lotes'] }}" min="1" required>
+              <div class="form-text text-warning d-none" id="avisoStock">
+                ⚠ Al guardar se recalculará el consumo de MP y empaques.
+              </div>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Unidades Producidas</label>
+              <input type="number" name="unidades_producidas" class="form-control form-control-sm"
+                     value="{{ lote['unidades_producidas'] or '' }}" min="0">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Unidades Ingresadas a Bodega</label>
+              <input type="number" name="unidades_ingresadas" class="form-control form-control-sm"
+                     value="{{ lote['unidades_ingresadas'] or '' }}" min="0">
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Observaciones</label>
+              <textarea name="observaciones" class="form-control form-control-sm" rows="3">{{ lote['observaciones'] or '' }}</textarea>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ── Columna derecha: operarios + empaques ── #}
+    <div class="col-lg-5">
+
+      {# Operarios #}
+      <div class="card mb-3">
+        <div class="card-header py-2">
+          <strong class="small text-uppercase" style="color:#64748b;letter-spacing:.06em">
+            <i class="bi bi-people me-1"></i>Operarios
+          </strong>
+        </div>
+        <div class="card-body">
+          {% if todos_operarios %}
+          <div class="row g-2">
+            {% for op in todos_operarios %}
+            <div class="col-12">
+              <div class="form-check border rounded px-3 py-2" style="cursor:pointer"
+                   onclick="this.querySelector('input').click()">
+                <input class="form-check-input" type="checkbox" name="operarios"
+                       value="{{ op['id'] }}" id="op{{ op['id'] }}"
+                       {% if op['id'] in operarios_lote_ids %}checked{% endif %}>
+                <label class="form-check-label w-100" for="op{{ op['id'] }}" style="cursor:pointer">
+                  <span class="fw-semibold" style="font-size:.88rem">{{ op['nombre'] }}</span>
+                  <span class="text-muted ms-1" style="font-size:.78rem">{{ op['cargo'] }}</span>
+                </label>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted small mb-0">No hay operarios activos registrados.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Consumo MP (informativo) #}
+      {% if consumo_mp %}
+      <div class="card mb-3">
+        <div class="card-header py-2">
+          <strong class="small text-uppercase" style="color:#64748b;letter-spacing:.06em">
+            <i class="bi bi-flask me-1"></i>Consumo MP Registrado
+          </strong>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0" style="font-size:.82rem">
+            <thead>
+              <tr>
+                <th class="ps-3">Materia Prima</th>
+                <th class="text-end pe-3">Cantidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in consumo_mp %}
+              <tr>
+                <td class="ps-3">{{ c['nombre'] }}</td>
+                <td class="text-end pe-3">{{ c['cantidad_usada'] }} {{ c['unidad'] }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <p class="text-muted px-3 pb-2 mb-0" style="font-size:.72rem">
+            * Se recalcula automáticamente si cambias el Núm. de Lotes.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Empaques (si hay) #}
+      {% if empaques_lote %}
+      <div class="card">
+        <div class="card-header py-2">
+          <strong class="small text-uppercase" style="color:#64748b;letter-spacing:.06em">
+            <i class="bi bi-box-seam me-1"></i>Empaques Consumidos
+            <span class="badge bg-warning text-dark ms-1" style="font-size:.6rem">⚠ ajusta stock</span>
+          </strong>
+        </div>
+        <div class="card-body">
+          <p class="text-muted mb-2" style="font-size:.75rem">
+            Solo se actualiza si cambias el Núm. de Lotes. En ese caso, los valores abajo
+            serán el nuevo consumo registrado.
+          </p>
+          {% for emp in empaques_lote %}
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <input type="hidden" name="empaques_ids" value="{{ emp['tipo_empaque_id'] }}">
+            <label class="flex-grow-1 small" style="font-size:.85rem">{{ emp['nombre'] }}</label>
+            <input type="number" name="empaques_cant" class="form-control form-control-sm"
+                   style="width:90px;text-align:center" value="{{ emp['cantidad_usada'] }}" min="0">
+            <span class="text-muted small">uds</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>{# /row #}
+
+  {# Botones de acción #}
+  <div class="d-flex gap-2 justify-content-end mt-3">
+    <a href="{{ url_for('produccion_lista') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-x-lg me-1"></i>Cancelar
+    </a>
+    <button type="submit" class="btn btn-warning fw-bold px-4">
+      <i class="bi bi-floppy me-1"></i>Guardar Cambios
+    </button>
+  </div>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const numLotesInput = document.getElementById('numLotes');
+  const valorOriginal = numLotesInput.value;
+  const avisoStock    = document.getElementById('avisoStock');
+
+  numLotesInput.addEventListener('input', () => {
+    const cambio = numLotesInput.value !== valorOriginal;
+    avisoStock.classList.toggle('d-none', !cambio);
+    numLotesInput.classList.toggle('border-warning', cambio);
+  });
+</script>
+{% endblock %}

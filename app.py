@@ -380,6 +380,134 @@ def produccion_detalle(lote_id):
     return render_template('produccion_detalle.html', lote=lote, operarios=operarios,
                            consumo_mp=consumo_mp, consumo_emp=consumo_emp)
 
+@app.route('/produccion/<int:lote_id>/editar', methods=['GET', 'POST'])
+@admin_required
+def editar_lote(lote_id):
+    db = get_db()
+    lote = db.execute("""
+        SELECT lp.*, p.nombre as producto_nombre, p.unidades_por_lote as uds_por_lote
+        FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
+        WHERE lp.id=?
+    """, (lote_id,)).fetchone()
+
+    if not lote:
+        flash('Lote no encontrado.', 'danger')
+        db.close()
+        return redirect(url_for('produccion_lista'))
+
+    if request.method == 'POST':
+        nueva_fecha       = request.form['fecha_produccion']
+        nueva_hora_inicio = request.form.get('hora_inicio', '')
+        nueva_hora_fin    = request.form.get('hora_fin', '')
+        nuevo_num_lotes   = int(request.form.get('num_lotes', lote['num_lotes']))
+        nuevas_unidades   = request.form.get('unidades_producidas') or lote['unidades_producidas']
+        nuevas_uds_ing    = request.form.get('unidades_ingresadas') or None
+        nuevo_estado      = request.form.get('estado', lote['estado'])
+        nuevas_obs        = request.form.get('observaciones', '')
+        nuevos_operarios  = request.form.getlist('operarios')
+
+        # Ajuste de stock solo si cambió num_lotes
+        if nuevo_num_lotes != lote['num_lotes']:
+            # Revertir consumo de MP original
+            for c in db.execute(
+                "SELECT materia_prima_id, cantidad_usada FROM lote_consumo_mp WHERE lote_id=?",
+                (lote_id,)
+            ).fetchall():
+                db.execute(
+                    "UPDATE materias_primas SET stock_actual = stock_actual + ? WHERE id=?",
+                    (c['cantidad_usada'], c['materia_prima_id'])
+                )
+            # Revertir consumo de empaques original
+            for ce in db.execute(
+                "SELECT tipo_empaque_id, cantidad_usada FROM lote_consumo_empaque WHERE lote_id=?",
+                (lote_id,)
+            ).fetchall():
+                db.execute(
+                    "UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
+                    (ce['cantidad_usada'], ce['tipo_empaque_id'])
+                )
+            # Calcular y aplicar nuevo consumo de MP
+            nuevo_consumo = calcular_consumo(lote['producto_id'], nuevo_num_lotes, db)
+            db.execute("DELETE FROM lote_consumo_mp WHERE lote_id=?", (lote_id,))
+            for item in nuevo_consumo:
+                db.execute(
+                    "INSERT INTO lote_consumo_mp (lote_id, materia_prima_id, cantidad_usada, unidad) VALUES (?,?,?,?)",
+                    (lote_id, item['mp_id'], item['cantidad'], item['unidad'])
+                )
+                db.execute(
+                    "UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id=?",
+                    (item['cantidad'], item['mp_id'])
+                )
+            # Nuevo consumo de empaques desde el formulario
+            empaques_ids  = request.form.getlist('empaques_ids')
+            empaques_cant = request.form.getlist('empaques_cant')
+            db.execute("DELETE FROM lote_consumo_empaque WHERE lote_id=?", (lote_id,))
+            for emp_id, cant in zip(empaques_ids, empaques_cant):
+                if cant and int(cant) > 0:
+                    db.execute(
+                        "INSERT INTO lote_consumo_empaque (lote_id, tipo_empaque_id, cantidad_usada) VALUES (?,?,?)",
+                        (lote_id, emp_id, int(cant))
+                    )
+                    db.execute(
+                        "UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?",
+                        (int(cant), emp_id)
+                    )
+
+        # Actualizar campos del lote
+        db.execute("""
+            UPDATE lotes_produccion SET
+                fecha_produccion=?, hora_inicio=?, hora_fin=?,
+                num_lotes=?, unidades_producidas=?, unidades_ingresadas=?,
+                estado=?, observaciones=?
+            WHERE id=?
+        """, (
+            nueva_fecha, nueva_hora_inicio, nueva_hora_fin,
+            nuevo_num_lotes, nuevas_unidades, nuevas_uds_ing,
+            nuevo_estado, nuevas_obs, lote_id
+        ))
+
+        # Actualizar operarios
+        db.execute("DELETE FROM lote_operarios WHERE lote_id=?", (lote_id,))
+        for op_id in nuevos_operarios:
+            db.execute("INSERT OR IGNORE INTO lote_operarios VALUES (?,?)", (lote_id, op_id))
+
+        registrar_log(db, 'Editar lote', 'Producción',
+                      f'Lote {lote["codigo_lote"]} editado por {session.get("nombre","")}')
+        db.commit()
+        flash(f'Lote {lote["codigo_lote"]} actualizado correctamente.', 'success')
+        db.close()
+        return redirect(url_for('produccion_lista'))
+
+    # GET — cargar datos actuales
+    operarios_lote_ids = [
+        o['operario_id'] for o in db.execute(
+            "SELECT operario_id FROM lote_operarios WHERE lote_id=?", (lote_id,)
+        ).fetchall()
+    ]
+    todos_operarios = db.execute(
+        "SELECT * FROM operarios WHERE activo=1 ORDER BY nombre"
+    ).fetchall()
+    empaques_lote = db.execute("""
+        SELECT lce.tipo_empaque_id, lce.cantidad_usada, te.nombre
+        FROM lote_consumo_empaque lce
+        JOIN tipos_empaque te ON te.id=lce.tipo_empaque_id
+        WHERE lce.lote_id=?
+    """, (lote_id,)).fetchall()
+    consumo_mp = db.execute("""
+        SELECT mp.nombre, lc.cantidad_usada, lc.unidad
+        FROM lote_consumo_mp lc JOIN materias_primas mp ON mp.id=lc.materia_prima_id
+        WHERE lc.lote_id=?
+    """, (lote_id,)).fetchall()
+
+    db.close()
+    return render_template('produccion_editar.html',
+        lote=lote,
+        operarios_lote_ids=operarios_lote_ids,
+        todos_operarios=todos_operarios,
+        empaques_lote=empaques_lote,
+        consumo_mp=consumo_mp,
+    )
+
 # ─── Inventario Materias Primas ────────────────────────────────────────────────
 
 @app.route('/inventario/mp')

@@ -74,10 +74,15 @@
                 <span class="badge bg-info text-dark">{{ lote['estado'] }}</span>
               {% endif %}
             </td>
-            <td>
-              <a href="/produccion/{{ lote['id'] }}" class="btn btn-sm btn-outline-secondary">
+            <td class="text-nowrap">
+              <a href="/produccion/{{ lote['id'] }}" class="btn btn-sm btn-outline-secondary" title="Ver detalle">
                 <i class="bi bi-eye"></i>
               </a>
+              {% if session.get('rol') == 'admin' %}
+              <a href="{{ url_for('editar_lote', lote_id=lote['id']) }}" class="btn btn-sm btn-outline-warning" title="Editar lote">
+                <i class="bi bi-pencil"></i>
+              </a>
+              {% endif %}
             </td>
           </tr>
           {% else %}
