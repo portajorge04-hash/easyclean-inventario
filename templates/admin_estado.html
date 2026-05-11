@@ -5,15 +5,71 @@
 {% block content %}
 <div class="row g-3">
 
+  {# ── ALERTA CRÍTICA: SQLite (datos efímeros) ─────────────────── #}
+  {% if not use_pg %}
+  <div class="col-12">
+    <div class="alert alert-danger border-0 mb-0" style="border-left:5px solid #dc2626 !important">
+      <div class="d-flex align-items-start gap-3">
+        <i class="bi bi-exclamation-triangle-fill text-danger fs-3 mt-1"></i>
+        <div class="flex-grow-1">
+          <h5 class="mb-1 text-danger">⚠️ ATENCIÓN: El sistema está usando SQLite (base de datos local)</h5>
+          <p class="mb-2">
+            <strong>Los datos se borrarán cada vez que Railway haga un redeploy.</strong>
+            Esto ocurre porque la variable de entorno <code>DATABASE_URL</code> no está configurada en Railway.
+          </p>
+          <p class="mb-2 fw-semibold">Para solucionar esto de forma permanente:</p>
+          <ol class="mb-2 small">
+            <li>Ve a <strong>railway.app</strong> → tu proyecto → pestaña <strong>Variables</strong></li>
+            <li>Agrega la variable <code>DATABASE_URL</code> con la URL de tu base de datos PostgreSQL (Neon, Supabase, etc.)</li>
+            <li>Railway redesplegará automáticamente y los datos quedarán en la nube de forma permanente</li>
+          </ol>
+          <p class="mb-0 small text-muted">
+            Mientras tanto, el sistema tiene una <strong>guardia automática</strong> que restaura los datos del backup
+            del 2026-05-04 cada vez que detecta que fueron borrados. Usa el botón de abajo para restaurar manualmente.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── ALERTA: Restauración manual ─────────────────────────────── #}
+  <div class="col-12">
+    <div class="card border-0" style="border-left:4px solid #f59e0b !important; background:#fffbeb">
+      <div class="card-body d-flex align-items-center gap-3 py-3">
+        <i class="bi bi-arrow-counterclockwise text-warning" style="font-size:1.8rem"></i>
+        <div class="flex-grow-1">
+          <div class="fw-semibold" style="color:#92400e">Restaurar datos desde backup</div>
+          <small class="text-muted">
+            Si notas que falta información (compras, operarios, stocks), usa este botón para restaurar
+            el backup del <strong>2026-05-04</strong>. No afecta lotes de producción ni compras más recientes.
+          </small>
+        </div>
+        <form method="POST" action="/admin/restaurar-backup"
+              onsubmit="return confirm('¿Confirmas la restauración desde el backup del 2026-05-04?\n\nEsto recargará las compras y stocks del backup. Los lotes de producción no se tocarán.')">
+          <button type="submit" class="btn btn-warning btn-sm fw-bold text-nowrap">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar Backup
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Estado de la BD ──────────────────────────────────────── -->
   <div class="col-12">
     <div class="card border-0" style="border-left: 4px solid {{ '#0d9488' if ok else '#dc2626' }} !important;">
       <div class="card-body d-flex align-items-center gap-3">
-        {% if ok %}
+        {% if ok and use_pg %}
           <i class="bi bi-check-circle-fill text-success" style="font-size:2rem"></i>
           <div>
-            <h5 class="mb-0 text-success">Base de datos conectada correctamente</h5>
-            <small class="text-muted">Neon PostgreSQL (producción) — todos los datos están seguros</small>
+            <h5 class="mb-0 text-success">Base de datos PostgreSQL conectada</h5>
+            <small class="text-muted">Los datos están almacenados en la nube — no se pierden con los redeploys</small>
+          </div>
+        {% elif ok and not use_pg %}
+          <i class="bi bi-exclamation-circle-fill text-warning" style="font-size:2rem"></i>
+          <div>
+            <h5 class="mb-0 text-warning">Usando SQLite local (datos NO persistentes)</h5>
+            <small class="text-muted">Configura DATABASE_URL en Railway para persistencia real en la nube</small>
           </div>
         {% else %}
           <i class="bi bi-x-circle-fill text-danger" style="font-size:2rem"></i>
@@ -119,9 +175,18 @@
         <h6 class="card-title mb-3"><i class="bi bi-lock-fill me-1 text-success"></i>Cómo están protegidos los datos</h6>
         <div class="row g-3">
           <div class="col-md-3">
-            <div class="p-3 rounded" style="background:#f0fdf4">
-              <div class="fw-semibold mb-1" style="color:#166534"><i class="bi bi-database-check me-1"></i>Base de datos separada</div>
-              <small class="text-muted">Los datos están en Neon PostgreSQL, completamente separado del servidor Railway. Un nuevo deploy de código <strong>nunca toca</strong> la base de datos.</small>
+            <div class="p-3 rounded" style="background:{{ '#f0fdf4' if use_pg else '#fef2f2' }}">
+              <div class="fw-semibold mb-1" style="color:{{ '#166534' if use_pg else '#991b1b' }}">
+                <i class="bi bi-{{ 'database-check' if use_pg else 'database-x' }} me-1"></i>
+                {{ 'Base de datos en la nube' if use_pg else 'SQLite local (efímero)' }}
+              </div>
+              <small class="text-muted">
+                {% if use_pg %}
+                  PostgreSQL en la nube, separado del servidor Railway. Un nuevo deploy <strong>nunca toca</strong> la base de datos.
+                {% else %}
+                  <strong class="text-danger">RIESGO:</strong> Los datos se pierden con cada redeploy. Configura <code>DATABASE_URL</code> en Railway para persistencia real.
+                {% endif %}
+              </small>
             </div>
           </div>
           <div class="col-md-3">

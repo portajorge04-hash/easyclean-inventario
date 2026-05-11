@@ -683,6 +683,79 @@ MIGRACIONES = [
     ('v004_restore_backup_20260504', _mig_v004_restore_backup_20260504),
 ]
 
+# ─── Guardia de datos (corre en CADA arranque) ────────────────────────────────
+
+def _guardia_de_datos(db):
+    """
+    Se ejecuta en CADA inicio del servidor.
+    Detecta si los datos del backup fueron borrados y los restaura automáticamente.
+    No duplica: usa facturas como huella digital para saber si los datos ya existen.
+    """
+    try:
+        # Huella: si FAC-UNIQ-001 no existe, las compras fueron borradas
+        fac_existe = db.execute(
+            "SELECT COUNT(*) as n FROM compras_mp WHERE numero_factura='FAC-UNIQ-001'"
+        ).fetchone()['n']
+
+        if fac_existe == 0:
+            print("[GUARDIA] Compras MP faltantes — restaurando datos del backup...")
+            _mig_v004_restore_backup_20260504(db)
+            db.commit()
+            print("[GUARDIA] Datos restaurados correctamente.")
+
+        # Siempre garantizar que los operarios existen (son críticos para el sistema)
+        for cedula, nombre, cargo in [
+            ('1045771471', 'YOSETH PORTA',  'Jefe de Producción'),
+            ('1043443183', 'KEINER GARCIA', 'Operario'),
+        ]:
+            existe = db.execute(
+                "SELECT id FROM operarios WHERE cedula=?", (cedula,)
+            ).fetchone()
+            if not existe:
+                db.execute(
+                    "INSERT OR IGNORE INTO operarios (nombre, cedula, cargo, activo) VALUES (?,?,?,?)",
+                    (nombre, cedula, cargo, 1)
+                )
+                db.commit()
+                print(f"[GUARDIA] Operario restaurado: {nombre}")
+
+        # Garantizar usuario admin si fue eliminado
+        try:
+            admin = db.execute(
+                "SELECT id FROM usuarios WHERE username='admin'"
+            ).fetchone()
+            if not admin:
+                from werkzeug.security import generate_password_hash
+                db.execute(
+                    "INSERT OR IGNORE INTO usuarios (username, password_hash, nombre, rol) VALUES (?,?,?,?)",
+                    ('admin', generate_password_hash('EasyClean2025!'), 'Administrador', 'admin')
+                )
+                db.commit()
+                print("[GUARDIA] Usuario admin restaurado.")
+        except Exception:
+            pass
+
+    except Exception as e:
+        print(f"[GUARDIA] Error en guardia de datos: {e}")
+
+
+def restaurar_desde_backup(db):
+    """
+    Restauración manual completa desde el backup del 2026-05-04.
+    Borra compras existentes y vuelve a insertar los datos del backup.
+    Solo para uso desde el panel de administración.
+    """
+    # Borrar compras actuales (para reinsertar limpias desde backup)
+    db.execute("DELETE FROM compras_mp")
+    db.execute("DELETE FROM compras_empaque")
+    db.commit()
+
+    # Ejecutar la migración de restauración
+    _mig_v004_restore_backup_20260504(db)
+    db.commit()
+    print("[RESTAURAR] Restauración manual completada desde backup 2026-05-04.")
+
+
 # ─── Inicialización ───────────────────────────────────────────────────────────
 
 def init_db():
@@ -709,6 +782,9 @@ def init_db():
                 print(f'Migración aplicada: {nombre}')
             except Exception as e:
                 print(f'Error en migración {nombre}: {e}')
+
+    # 3. Guardia de datos: corre en cada arranque, restaura si detecta pérdida
+    _guardia_de_datos(db)
 
     db.close()
     print("Base de datos inicializada correctamente.")

@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
-from database import get_db, init_db
+from database import get_db, init_db, USE_PG, restaurar_desde_backup
 from datetime import datetime, date, timedelta
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -110,7 +110,7 @@ def admin_usuarios():
 
 @app.context_processor
 def inject_now():
-    return {'now': datetime.now(), 'session': session}
+    return {'now': datetime.now(), 'session': session, 'USE_PG': USE_PG}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1216,6 +1216,22 @@ def admin_actividad():
 
 # ─── Admin / Respaldo ─────────────────────────────────────────────────────────
 
+@app.route('/admin/restaurar-backup', methods=['POST'])
+@admin_required
+def admin_restaurar_backup():
+    db = get_db()
+    try:
+        restaurar_desde_backup(db)
+        registrar_log(db, 'Restaurar backup', 'Admin',
+                      f'Restauración manual del backup 2026-05-04 por {session.get("nombre","")}')
+        db.commit()
+        flash('✅ Datos restaurados correctamente desde el backup del 2026-05-04.', 'success')
+    except Exception as e:
+        flash(f'❌ Error al restaurar: {e}', 'danger')
+    finally:
+        db.close()
+    return redirect(url_for('admin_estado'))
+
 @app.route('/admin/estado')
 def admin_estado():
     db = get_db()
@@ -1240,7 +1256,7 @@ def admin_estado():
         migraciones = []
         ok = False
     db.close()
-    return render_template('admin_estado.html', tablas=tablas, migraciones=migraciones, ok=ok)
+    return render_template('admin_estado.html', tablas=tablas, migraciones=migraciones, ok=ok, use_pg=USE_PG)
 
 @app.route('/admin/exportar')
 def admin_exportar():
