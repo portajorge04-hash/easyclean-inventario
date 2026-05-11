@@ -2,8 +2,17 @@ import os
 import sqlite3
 import re
 
-DATABASE_URL = os.environ.get('DATABASE_URL', '')
-USE_PG = bool(DATABASE_URL) and ('postgresql' in DATABASE_URL or DATABASE_URL.startswith('postgres'))
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+_url_lower = DATABASE_URL.lower()
+USE_PG = bool(DATABASE_URL) and (
+    _url_lower.startswith('postgresql') or
+    _url_lower.startswith('postgres:')
+) and not DATABASE_URL.startswith('${{')
+
+print(f"[DB] DATABASE_URL configurada: {'Sí' if DATABASE_URL else 'No'}")
+if DATABASE_URL:
+    print(f"[DB] Primeros 30 chars: {DATABASE_URL[:30]!r}")
+print(f"[DB] Motor seleccionado: {'PostgreSQL' if USE_PG else 'SQLite (local)'}")
 
 # ─── Wrappers unificados ──────────────────────────────────────────────────────
 
