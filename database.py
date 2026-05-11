@@ -580,10 +580,107 @@ def _mig_v003_usuarios(db):
 # Para agregar cambios futuros: añadir una nueva tupla al final de esta lista.
 # NUNCA modificar ni eliminar las entradas existentes.
 
+def _mig_v004_restore_backup_20260504(db):
+    """Restaura el backup del 2026-05-04: compras, stocks y operarios."""
+
+    # ── Stock de Materias Primas ─────────────────────────────────────────────
+    # Valores exactos del backup exportado el 2026-05-04
+    stock_mp = [
+        (1,   0.0),   # Sal
+        (2,  50.0),   # LESS
+        (3,   0.0),   # Agua
+        (4,  53.0),   # DBL
+        (5,   0.0),   # Poliacrilato de Sodio
+        (6,   0.0),   # Conservante
+        (7,  50.0),   # LESS @ 28%
+        (8,  30.0),   # Betaína
+        (9,  20.0),   # Glicerina
+        (10, 20.0),   # Propilenglicol
+        (11,  0.0),   # EDTA
+        (12,  0.0),   # Peróxido de Hidrógeno al 50%
+        (13,  0.0),   # Goma Xantan
+        (14,  0.0),   # Nonilfenol
+    ]
+    for mp_id, stock in stock_mp:
+        db.execute("UPDATE materias_primas SET stock_actual=? WHERE id=?", (stock, mp_id))
+
+    # ── Stock de Empaques ────────────────────────────────────────────────────
+    stock_empaques = [
+        (1,   0),   # Envase 120ml (Suelas)
+        (2,   0),   # Subtapa (Suelas)
+        (3,   0),   # Tapa (Suelas)
+        (4,   0),   # Etiqueta Suelas y Sintéticos
+        (5,   0),   # Envase 160ml (Textil)
+        (6,   0),   # Etiqueta Material Textil
+        (7, 120),   # Envase 120ml (Icon White)
+        (8,   0),   # Etiqueta Icon White
+    ]
+    for emp_id, stock in stock_empaques:
+        db.execute("UPDATE tipos_empaque SET stock_actual=? WHERE id=?", (stock, emp_id))
+
+    # ── Stock de Bodega ──────────────────────────────────────────────────────
+    stock_bodega = [
+        (1, 0),   # Bolsa de Kit
+        (2, 0),   # Bolsa de Boutique
+        (3, 0),   # Bolsa de Celofán
+        (4, 0),   # Cepillo de Suelas
+        (5, 0),   # Cepillo de Tela
+    ]
+    for art_id, stock in stock_bodega:
+        db.execute("UPDATE articulos_bodega SET stock_actual=? WHERE id=?", (stock, art_id))
+
+    # ── Operarios ────────────────────────────────────────────────────────────
+    operarios = [
+        ('YOSETH PORTA',  '1045771471', 'Jefe de Producción', 1),
+        ('KEINER GARCIA', '1043443183', 'Operario',            1),
+    ]
+    for nombre, cedula, cargo, activo in operarios:
+        existe = db.execute(
+            "SELECT id FROM operarios WHERE cedula=?", (cedula,)
+        ).fetchone()
+        if not existe:
+            db.execute(
+                "INSERT OR IGNORE INTO operarios (nombre, cedula, cargo, activo) VALUES (?,?,?,?)",
+                (nombre, cedula, cargo, activo)
+            )
+
+    # ── Compras de Materias Primas ───────────────────────────────────────────
+    # Solo restaurar si la tabla está vacía (evita duplicados)
+    n_compras_mp = db.execute("SELECT COUNT(*) as n FROM compras_mp").fetchone()['n']
+    if n_compras_mp == 0:
+        compras_mp = [
+            (4,  '2026-04-27', 53.0, 'kg', 'UNIQUIMICOS SAS',  6386.0,  338487.0, 'FAC-UNIQ-001', ''),
+            (8,  '2026-04-27', 30.0, 'kg', 'UNIQUIMICOS SAS',  7563.0,  226890.0, 'FAC-UNIQ-002', ''),
+            (9,  '2026-04-27', 20.0, 'kg', 'UNIQUIMICOS SAS', 10924.0,  218487.0, 'FAC-UNIQ-003', ''),
+            (10, '2026-04-27', 20.0, 'kg', 'UNIQUIMICOS SAS', 11008.0,  220168.0, 'FAC-UNIQ-004', ''),
+            (2,  '2026-04-27', 50.0, 'kg', 'UNIQUIMICOS SAS',  5462.0,  546218.0, 'FAC-UNIQ-005', ''),
+            (7,  '2026-04-27', 50.0, 'kg', 'UNIQUIMICOS SAS',  5462.0,  546218.0, 'FAC-UNIQ-006', ''),
+        ]
+        for mp_id, fecha, cantidad, unidad, prov, pu, pt, factura, obs in compras_mp:
+            db.execute("""
+                INSERT INTO compras_mp
+                (materia_prima_id, fecha, cantidad, unidad, proveedor,
+                 precio_unitario, precio_total, numero_factura, observaciones)
+                VALUES (?,?,?,?,?,?,?,?,?)
+            """, (mp_id, fecha, cantidad, unidad, prov, pu, pt, factura, obs))
+
+    # ── Compras de Empaques ──────────────────────────────────────────────────
+    n_compras_emp = db.execute("SELECT COUNT(*) as n FROM compras_empaque").fetchone()['n']
+    if n_compras_emp == 0:
+        db.execute("""
+            INSERT INTO compras_empaque
+            (tipo_empaque_id, fecha, cantidad, proveedor,
+             precio_unitario, precio_total, numero_factura, observaciones)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (7, '2026-04-30', 120, 'ENVASES DUQUE SALDARRIAGA.SAS.',
+              738655.0, 105585.0, 'FAC-ENVDUQ-001', ''))
+
+
 MIGRACIONES = [
     ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
     ('v002_articulos_bodega', _mig_v002_articulos_bodega),
     ('v003_usuarios',         _mig_v003_usuarios),
+    ('v004_restore_backup_20260504', _mig_v004_restore_backup_20260504),
 ]
 
 # ─── Inicialización ───────────────────────────────────────────────────────────
