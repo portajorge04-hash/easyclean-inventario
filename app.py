@@ -217,7 +217,7 @@ def dashboard():
                SUM(unidades_producidas) as total
         FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
         WHERE fecha_produccion >= ?
-        GROUP BY fecha_produccion, producto_id
+        GROUP BY fecha_produccion, lp.producto_id, p.nombre
         ORDER BY fecha_produccion
     """, (hace_7,)).fetchall()
 
@@ -735,7 +735,7 @@ def reportes():
                SUM(lp.unidades_ingresadas) as total_ingresadas
         FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
         WHERE substr(lp.fecha_produccion, 1, 7)=?
-        GROUP BY lp.producto_id
+        GROUP BY lp.producto_id, p.nombre
     """, (mes,)).fetchall()
 
     consumo_mp_mes = db.execute("""
@@ -744,7 +744,7 @@ def reportes():
         JOIN materias_primas mp ON mp.id=lc.materia_prima_id
         JOIN lotes_produccion lp ON lp.id=lc.lote_id
         WHERE substr(lp.fecha_produccion, 1, 7)=?
-        GROUP BY lc.materia_prima_id, lc.unidad
+        GROUP BY lc.materia_prima_id, lc.unidad, mp.nombre
         ORDER BY total DESC
     """, (mes,)).fetchall()
 
@@ -753,7 +753,7 @@ def reportes():
                SUM(c.precio_total) as costo
         FROM compras_mp c JOIN materias_primas mp ON mp.id=c.materia_prima_id
         WHERE substr(c.fecha, 1, 7)=?
-        GROUP BY c.materia_prima_id
+        GROUP BY c.materia_prima_id, mp.nombre, c.unidad
     """, (mes,)).fetchall()
 
     db.close()
