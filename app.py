@@ -5,9 +5,16 @@ from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import os
+import traceback
 
 app = Flask(__name__)
 app.secret_key = 'easyclean_pro_2025_seguro'
+
+@app.errorhandler(500)
+def error_500(e):
+    tb = traceback.format_exc()
+    print(f"[ERROR 500] {request.url}\n{tb}")
+    return render_template('error_500.html', error=str(e), tb=tb), 500
 
 # ─── Autenticación ────────────────────────────────────────────────────────────
 
@@ -219,7 +226,7 @@ def dashboard():
         productos=productos, stats=stats,
         alertas_mp=alertas_mp, alertas_emp=alertas_emp,
         ultimos_lotes=ultimos_lotes,
-        datos_grafico=json.dumps([dict(r) for r in datos_grafico])
+        datos_grafico=json.dumps([{k: r[k] for k in r.keys()} for r in datos_grafico])
     )
 
 # ─── Producción ───────────────────────────────────────────────────────────────
@@ -339,12 +346,12 @@ def formula_json(producto_id, num_lotes):
     consumo = calcular_consumo(producto_id, num_lotes, db)
     prod = db.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
     empaques = db.execute("SELECT * FROM tipos_empaque WHERE producto_id=?", (producto_id,)).fetchall()
-    unidades = dict(prod)['unidades_por_lote'] * num_lotes
+    unidades = prod['unidades_por_lote'] * num_lotes
     db.close()
     return jsonify({
         'consumo': consumo,
         'unidades_estimadas': unidades,
-        'empaques': [dict(e) for e in empaques]
+        'empaques': [{k: e[k] for k in e.keys()} for e in empaques]
     })
 
 @app.route('/produccion/<int:lote_id>')
