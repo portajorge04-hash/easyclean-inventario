@@ -82,6 +82,13 @@
               <a href="{{ url_for('editar_lote', lote_id=lote['id']) }}" class="btn btn-sm btn-outline-warning" title="Editar lote">
                 <i class="bi bi-pencil"></i>
               </a>
+              <form method="POST" action="{{ url_for('eliminar_lote', lote_id=lote['id']) }}"
+                    style="display:inline"
+                    onsubmit="return confirm('¿Eliminar el lote {{ lote[\'codigo_lote\'] }}?\n\nSe revertirá el stock de materias primas y empaques.\nEsta acción NO se puede deshacer.')">
+                <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar lote">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
               {% endif %}
             </td>
           </tr>

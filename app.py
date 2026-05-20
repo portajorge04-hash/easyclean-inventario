@@ -515,6 +515,44 @@ def editar_lote(lote_id):
         consumo_mp=consumo_mp,
     )
 
+@app.route('/produccion/<int:lote_id>/eliminar', methods=['POST'])
+@admin_required
+def eliminar_lote(lote_id):
+    db = get_db()
+    lote = db.execute("""
+        SELECT lp.*, p.nombre as producto_nombre
+        FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
+        WHERE lp.id=?
+    """, (lote_id,)).fetchone()
+    if not lote:
+        flash('Lote no encontrado.', 'danger')
+        db.close()
+        return redirect(url_for('produccion_lista'))
+
+    for c in db.execute(
+        "SELECT materia_prima_id, cantidad_usada FROM lote_consumo_mp WHERE lote_id=?", (lote_id,)
+    ).fetchall():
+        db.execute("UPDATE materias_primas SET stock_actual = stock_actual + ? WHERE id=?",
+                   (c['cantidad_usada'], c['materia_prima_id']))
+    db.execute("DELETE FROM lote_consumo_mp WHERE lote_id=?", (lote_id,))
+
+    for ce in db.execute(
+        "SELECT tipo_empaque_id, cantidad_usada FROM lote_consumo_empaque WHERE lote_id=?", (lote_id,)
+    ).fetchall():
+        db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
+                   (ce['cantidad_usada'], ce['tipo_empaque_id']))
+    db.execute("DELETE FROM lote_consumo_empaque WHERE lote_id=?", (lote_id,))
+
+    db.execute("DELETE FROM lote_operarios WHERE lote_id=?", (lote_id,))
+    db.execute("DELETE FROM lotes_produccion WHERE id=?", (lote_id,))
+
+    registrar_log(db, 'Eliminar lote', 'Producción',
+                  f'Lote {lote["codigo_lote"]} ({lote["producto_nombre"]}) eliminado por {session.get("nombre","")}')
+    db.commit()
+    flash(f'Lote {lote["codigo_lote"]} eliminado. El stock fue revertido correctamente.', 'success')
+    db.close()
+    return redirect(url_for('produccion_lista'))
+
 # ─── Inventario Materias Primas ────────────────────────────────────────────────
 
 @app.route('/inventario/mp')
