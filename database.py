@@ -685,11 +685,36 @@ def _mig_v004_restore_backup_20260504(db):
               738655.0, 105585.0, 'FAC-ENVDUQ-001', ''))
 
 
+def _mig_v005_fases_produccion(db):
+    """Añade columnas de fases al flujo de producción."""
+    cols = [
+        ("fase_actual",           "TEXT DEFAULT 'Control Calidad'"),
+        ("fecha_control_calidad", "TEXT"),
+        ("fecha_envasado",        "TEXT"),
+        ("fecha_etiquetado",      "TEXT"),
+        ("fecha_almacenamiento",  "TEXT"),
+    ]
+    for col_name, col_def in cols:
+        try:
+            db.execute(f"ALTER TABLE lotes_produccion ADD COLUMN {col_name} {col_def}")
+            db.commit()
+        except Exception:
+            pass  # La columna ya existe
+    # Lotes ya completados → marcarlos como Almacenados (ya están en bodega)
+    db.execute("""
+        UPDATE lotes_produccion
+        SET fase_actual = 'Almacenado'
+        WHERE estado = 'Completado'
+    """)
+    db.commit()
+
+
 MIGRACIONES = [
     ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
     ('v002_articulos_bodega', _mig_v002_articulos_bodega),
     ('v003_usuarios',         _mig_v003_usuarios),
     ('v004_restore_backup_20260504', _mig_v004_restore_backup_20260504),
+    ('v005_fases_produccion', _mig_v005_fases_produccion),
 ]
 
 # ─── Guardia de datos (corre en CADA arranque) ────────────────────────────────

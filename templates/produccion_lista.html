@@ -66,12 +66,19 @@
             <td class="text-center">{{ lote['unidades_ingresadas'] or '—' }}</td>
             <td style="font-size:.8rem">{{ lote_ops[lote['id']]|join(', ') or '—' }}</td>
             <td>
-              {% if lote['estado'] == 'Completado' %}
+              {% set f = lote['fase_actual'] %}
+              {% if f == 'Almacenado' or lote['estado'] == 'Completado' %}
                 <span class="badge bg-success">Completado</span>
+              {% elif f == 'Etiquetado' %}
+                <span class="badge bg-warning text-dark">Etiquetado</span>
+              {% elif f == 'Envasado' %}
+                <span class="badge bg-primary">Envasado</span>
+              {% elif f == 'Control Calidad' %}
+                <span class="badge bg-info text-dark">Control Calidad</span>
               {% elif lote['estado'] == 'Parcial' %}
                 <span class="badge bg-warning text-dark">Parcial</span>
               {% else %}
-                <span class="badge bg-info text-dark">{{ lote['estado'] }}</span>
+                <span class="badge bg-secondary">{{ lote['estado'] }}</span>
               {% endif %}
             </td>
             <td class="text-nowrap">

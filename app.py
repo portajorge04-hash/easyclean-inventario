@@ -354,6 +354,8 @@ def formula_json(producto_id, num_lotes):
         'empaques': [{k: e[k] for k in e.keys()} for e in empaques]
     })
 
+FASES_PRODUCCION = ['Control Calidad', 'Envasado', 'Etiquetado', 'Almacenado']
+
 @app.route('/produccion/<int:lote_id>')
 def produccion_detalle(lote_id):
     db = get_db()
@@ -383,9 +385,16 @@ def produccion_detalle(lote_id):
         WHERE lc.lote_id=?
     """, (lote_id,)).fetchall()
 
+    fase_actual = lote['fase_actual'] if lote['fase_actual'] else 'Control Calidad'
+    fase_idx = FASES_PRODUCCION.index(fase_actual) if fase_actual in FASES_PRODUCCION else 0
+    siguiente_fase = FASES_PRODUCCION[fase_idx + 1] if fase_idx < len(FASES_PRODUCCION) - 1 else None
+
     db.close()
-    return render_template('produccion_detalle.html', lote=lote, operarios=operarios,
-                           consumo_mp=consumo_mp, consumo_emp=consumo_emp)
+    return render_template('produccion_detalle.html',
+        lote=lote, operarios=operarios,
+        consumo_mp=consumo_mp, consumo_emp=consumo_emp,
+        fase_idx=fase_idx, siguiente_fase=siguiente_fase, fases=FASES_PRODUCCION,
+    )
 
 @app.route('/produccion/<int:lote_id>/editar', methods=['GET', 'POST'])
 @admin_required
@@ -552,6 +561,56 @@ def eliminar_lote(lote_id):
     flash(f'Lote {lote["codigo_lote"]} eliminado. El stock fue revertido correctamente.', 'success')
     db.close()
     return redirect(url_for('produccion_lista'))
+
+@app.route('/produccion/<int:lote_id>/avanzar-fase', methods=['POST'])
+def avanzar_fase(lote_id):
+    db = get_db()
+    lote = db.execute("SELECT * FROM lotes_produccion WHERE id=?", (lote_id,)).fetchone()
+    if not lote:
+        flash('Lote no encontrado.', 'danger')
+        db.close()
+        return redirect(url_for('produccion_lista'))
+
+    fase_actual = lote['fase_actual'] or 'Control Calidad'
+    if fase_actual not in FASES_PRODUCCION:
+        fase_actual = 'Control Calidad'
+    idx = FASES_PRODUCCION.index(fase_actual)
+
+    if idx >= len(FASES_PRODUCCION) - 1:
+        flash('Este lote ya completó todas las fases.', 'info')
+        db.close()
+        return redirect(url_for('produccion_detalle', lote_id=lote_id))
+
+    nueva_fase = FASES_PRODUCCION[idx + 1]
+    ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    col_ts = {
+        'Control Calidad': 'fecha_control_calidad',
+        'Envasado':        'fecha_envasado',
+        'Etiquetado':      'fecha_etiquetado',
+    }.get(fase_actual)
+
+    if nueva_fase == 'Almacenado':
+        db.execute(f"""
+            UPDATE lotes_produccion
+            SET fase_actual=?, {col_ts}=?, fecha_almacenamiento=?,
+                estado='Completado',
+                unidades_ingresadas=COALESCE(unidades_producidas, unidades_ingresadas)
+            WHERE id=?
+        """, (nueva_fase, ahora, ahora, lote_id))
+    else:
+        db.execute(f"""
+            UPDATE lotes_produccion
+            SET fase_actual=?, {col_ts}=?
+            WHERE id=?
+        """, (nueva_fase, ahora, lote_id))
+
+    registrar_log(db, 'Avanzar fase', 'Producción',
+                  f'Lote {lote["codigo_lote"]} avanzó a: {nueva_fase} ({session.get("nombre","")})')
+    db.commit()
+    flash(f'Fase completada — Lote avanzó a: {nueva_fase}', 'success')
+    db.close()
+    return redirect(url_for('produccion_detalle', lote_id=lote_id))
 
 # ─── Inventario Materias Primas ────────────────────────────────────────────────
 
