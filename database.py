@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import re
+from datetime import datetime, timedelta
 
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 _url_lower = DATABASE_URL.lower()
@@ -837,6 +838,93 @@ def _mig_v005_fases_produccion(db):
     db.commit()
 
 
+def _mig_v006_restore_backup_20260531(db):
+    """Restaura datos reales del backup 2026-05-31: lotes, stocks actualizados, compras y movimientos de bodega."""
+
+    # ── Stocks reales de Materias Primas (al 31/05/2026) ────────────────────
+    stock_mp = [
+        (1,   -2.17),    # Sal
+        (2,   32.62),    # LESS
+        (3, 4995.37),    # Agua
+        (4,   42.47),    # DBL
+        (5,  -197.0),    # Poliacrilato de Sodio
+        (6,   -0.278),   # Conservante
+        (7,   42.09),    # LESS @ 28%
+        (8,   25.26),    # Betaína
+        (9,   18.42),    # Glicerina
+        (10,  17.63),    # Propilenglicol
+        (11, -160.0),    # EDTA
+        (12,   0.0),     # Peróxido de Hidrógeno al 50%
+        (13,   0.0),     # Goma Xantan
+        (14,   0.0),     # Nonilfenol
+    ]
+    for mp_id, stock in stock_mp:
+        db.execute("UPDATE materias_primas SET stock_actual=? WHERE id=?", (stock, mp_id))
+
+    # ── Stocks reales de Empaques (al 31/05/2026) ────────────────────────────
+    stock_empaques = [
+        (1, -666),   # Envase 120ml (Suelas)
+        (2, -666),   # Subtapa (Suelas)
+        (3, -666),   # Tapa (Suelas)
+        (4, -666),   # Etiqueta Suelas y Sintéticos
+        (5, -400),   # Envase 160ml (Textil)
+        (6, -400),   # Etiqueta Material Textil
+        (7,  120),   # Envase 120ml (Icon White)
+        (8,    0),   # Etiqueta Icon White
+    ]
+    for emp_id, stock in stock_empaques:
+        db.execute("UPDATE tipos_empaque SET stock_actual=? WHERE id=?", (stock, emp_id))
+
+    # ── Stock real de Bodega (al 31/05/2026) ─────────────────────────────────
+    db.execute("UPDATE articulos_bodega SET stock_actual=500 WHERE id=1")  # Bolsa de Kit
+
+    # ── Lotes de Producción ──────────────────────────────────────────────────
+    lotes = [
+        ('SS-20260519-001', 1, '2026-05-19', '10:00', '12:00', 1, 660, 650,
+         'Parcial', 'AUN NO SE LLEVAN LOS PRODUCTOS A BODEGA',
+         'Control Calidad', None, None, None, None),
+        ('MT-20260526-001', 2, '2026-05-19', '13:00', '16:00', 1, 400, 350,
+         'En Proceso', '',
+         'Envasado', '2026-05-26 14:13', None, None, None),
+    ]
+    for lote in lotes:
+        existe = db.execute(
+            "SELECT id FROM lotes_produccion WHERE codigo_lote=?", (lote[0],)
+        ).fetchone()
+        if not existe:
+            db.execute("""
+                INSERT INTO lotes_produccion
+                (codigo_lote, producto_id, fecha_produccion, hora_inicio, hora_fin,
+                 num_lotes, unidades_producidas, unidades_ingresadas, estado, observaciones,
+                 fase_actual, fecha_control_calidad, fecha_envasado, fecha_etiquetado, fecha_almacenamiento)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, lote)
+
+    # ── Compra de Bodega (BOLSAS JEFFER) ─────────────────────────────────────
+    existe_cb = db.execute(
+        "SELECT id FROM compras_bodega WHERE numero_factura='FAC-BLSJEFF-001'"
+    ).fetchone()
+    if not existe_cb:
+        db.execute("""
+            INSERT INTO compras_bodega
+            (articulo_id, fecha, cantidad, proveedor, precio_unitario, precio_total, numero_factura, observaciones)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (1, '2026-05-26', 500, 'BOLSAS JEFFER S.A.S', 660.0, 330000.0, 'FAC-BLSJEFF-001', ''))
+
+    # ── Movimiento de Bodega (entrada Bolsas de Kit) ──────────────────────────
+    existe_mv = db.execute(
+        "SELECT id FROM movimientos_bodega WHERE referencia='FAC-BLSJEFF-001'"
+    ).fetchone()
+    if not existe_mv:
+        db.execute("""
+            INSERT INTO movimientos_bodega
+            (articulo_id, tipo, cantidad, fecha, motivo, referencia, responsable, observaciones)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (1, 'Entrada', 500, '2026-05-26', 'Compra', 'FAC-BLSJEFF-001', 'BOLSAS JEFFER S.A.S', ''))
+
+    db.commit()
+
+
 def _backfill_lotes_legacy(db):
     """
     Convierte lotes_produccion creados antes del flujo de dos fases en el
@@ -885,7 +973,7 @@ def _backfill_lotes_legacy(db):
             ))
 
 
-def _mig_v006_grupos_y_envasado(db):
+def _mig_v007_grupos_y_envasado(db):
     """
     Rediseña producción en dos fases desacopladas para TODOS los productos:
     Producción (mezcla, tanque sin límite) -> Envasado (embotellado, tanque de 20L).
@@ -967,6 +1055,26 @@ def _mig_v006_grupos_y_envasado(db):
     _backfill_lotes_legacy(db)
     db.commit()
 
+    # 7. Marcar el tanque como "vaciado" justo después de la fecha más reciente de
+    # datos históricos: las sesiones retroactivas del backfill no respetan el
+    # límite físico de 20L (el concepto de tanque no existía antes), así que no
+    # deben arrastrarse al cálculo en vivo del tanque. Se usa la fecha de los
+    # datos (no la hora del reloj del servidor) para que cualquier sesión nueva
+    # con fecha de hoy quede SIEMPRE después de esta frontera, sin importar a
+    # qué hora del día se haya corrido esta migración.
+    ya_vaciado = db.execute("SELECT id FROM envasado_tanque_eventos WHERE tipo='vaciado'").fetchone()
+    if not ya_vaciado:
+        ultima_fecha = db.execute(
+            "SELECT MAX(fecha_produccion) as f FROM lotes_produccion"
+        ).fetchone()['f'] or '2000-01-01'
+        frontera = (datetime.strptime(ultima_fecha, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d 00:00')
+        db.execute(
+            "INSERT INTO envasado_tanque_eventos (tipo, fecha_hora, usuario, observaciones) VALUES (?,?,?,?)",
+            ('vaciado', frontera, 'sistema',
+             'Frontera automática creada al migrar al flujo de dos fases — el tanque físico debe confirmarse vacío antes de la primera sesión nueva.')
+        )
+        db.commit()
+
 
 MIGRACIONES = [
     ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
@@ -974,7 +1082,8 @@ MIGRACIONES = [
     ('v003_usuarios',         _mig_v003_usuarios),
     ('v004_restore_backup_20260504', _mig_v004_restore_backup_20260504),
     ('v005_fases_produccion', _mig_v005_fases_produccion),
-    ('v006_grupos_y_envasado', _mig_v006_grupos_y_envasado),
+    ('v006_restore_backup_20260531', _mig_v006_restore_backup_20260531),
+    ('v007_grupos_y_envasado', _mig_v007_grupos_y_envasado),
 ]
 
 # ─── Guardia de datos (corre en CADA arranque) ────────────────────────────────
