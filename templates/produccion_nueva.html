@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}Nuevo Lote{% endblock %}
-{% block page_title %}Registrar Lote de Producción{% endblock %}
+{% block title %}Nueva Mezcla{% endblock %}
+{% block page_title %}Registrar Mezcla (Producción){% endblock %}
 
 {% block content %}
 <div class="row">
@@ -12,11 +12,11 @@
           <!-- Producto y Fecha -->
           <div class="row g-3 mb-3">
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Producto <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold">Producto (fórmula a mezclar) <span class="text-danger">*</span></label>
               <select name="producto_id" id="producto_id" class="form-select" required>
                 <option value="">— Seleccionar —</option>
                 {% for p in productos %}
-                <option value="{{ p['id'] }}" data-unidades="{{ p['unidades_por_lote'] }}">{{ p['nombre'] }}</option>
+                <option value="{{ p['id'] }}">{{ p['nombre'] }} ({{ p['litros_por_lote'] }} L / lote)</option>
                 {% endfor %}
               </select>
             </div>
@@ -25,8 +25,8 @@
               <input type="number" name="num_lotes" id="num_lotes" class="form-control" value="1" min="1" required>
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-semibold">Uds. Estimadas</label>
-              <input type="number" class="form-control bg-light" id="uds_estimadas" readonly placeholder="Auto">
+              <label class="form-label fw-semibold">Litros a Mezclar</label>
+              <input type="text" class="form-control bg-light" id="litros_estimados" readonly placeholder="Auto">
             </div>
           </div>
 
@@ -42,25 +42,6 @@
             <div class="col-md-4">
               <label class="form-label fw-semibold">Hora Fin</label>
               <input type="time" name="hora_fin" class="form-control">
-            </div>
-          </div>
-
-          <div class="row g-3 mb-3">
-            <div class="col-md-4">
-              <label class="form-label fw-semibold">Unidades Producidas</label>
-              <input type="number" name="unidades_producidas" id="unidades_producidas" class="form-control" placeholder="Se calcula automáticamente">
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold">Unidades Ingresadas a Bodega</label>
-              <input type="number" name="unidades_ingresadas" class="form-control" placeholder="Opcional">
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold">Estado</label>
-              <select name="estado" class="form-select">
-                <option>Completado</option>
-                <option>Parcial</option>
-                <option>En Proceso</option>
-              </select>
             </div>
           </div>
 
@@ -87,28 +68,32 @@
             <div class="table-responsive">
               <table class="table table-sm table-bordered" id="tabla-mp">
                 <thead class="table-light">
-                  <tr><th>Materia Prima</th><th>Cantidad</th><th>Unidad</th><th>Stock Actual</th><th>Disponible</th></tr>
+                  <tr><th>Materia Prima</th><th>Cantidad</th><th>Unidad</th><th>Stock Actual</th><th>Quedaría</th></tr>
                 </thead>
                 <tbody id="body-mp"></tbody>
               </table>
             </div>
+            <div id="alerta-stock" class="alert alert-danger py-2 small mb-0" style="display:none"></div>
           </div>
 
-          <!-- Empaques -->
-          <div class="mb-3" id="seccion-empaques" style="display:none">
-            <label class="form-label fw-semibold">Empaques a Descontar</label>
-            <div id="lista-empaques"></div>
+          {% if es_admin %}
+          <div class="form-check mb-3" id="chk-forzar-wrap" style="display:none">
+            <input class="form-check-input" type="checkbox" name="forzar_stock_negativo" id="forzar_stock_negativo">
+            <label class="form-check-label small text-danger" for="forzar_stock_negativo">
+              Sé que esto deja materia prima en negativo (el stock en el sistema está desactualizado) — continuar de todas formas.
+            </label>
           </div>
+          {% endif %}
 
           <!-- Observaciones -->
           <div class="mb-4">
             <label class="form-label fw-semibold">Observaciones</label>
-            <textarea name="observaciones" class="form-control" rows="2" placeholder="Novedades, ajustes, observaciones del lote..."></textarea>
+            <textarea name="observaciones" class="form-control" rows="2" placeholder="Novedades, ajustes, observaciones de la mezcla..."></textarea>
           </div>
 
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary px-4">
-              <i class="bi bi-check-circle me-1"></i> Registrar Lote
+              <i class="bi bi-check-circle me-1"></i> Registrar Mezcla
             </button>
             <a href="/produccion" class="btn btn-outline-secondary">Cancelar</a>
           </div>
@@ -127,11 +112,12 @@
     </div>
     <div class="card mt-3">
       <div class="card-body">
-        <h6 class="card-title"><i class="bi bi-info-circle me-1"></i>Recordatorio</h6>
+        <h6 class="card-title"><i class="bi bi-info-circle me-1"></i>Cómo funciona ahora</h6>
         <ul class="small text-muted mb-0 ps-3">
-          <li>El sistema descuenta automáticamente la materia prima al guardar.</li>
+          <li>Esto solo <strong>mezcla materia prima</strong> en el tanque de producción.</li>
+          <li>El envasado (embotellado) se registra aparte, en sesiones de hasta 20 litros — puede ser en varias tandas y hasta para productos distintos que comparten la misma mezcla (ej. Material Textil / Gamuza).</li>
+          <li>El lote debe pasar por <strong>Control de Calidad</strong> antes de poder envasarse.</li>
           <li>Para Icon White: <strong>siempre pesar</strong> los ingredientes.</li>
-          <li>Registra las unidades reales producidas si difieren del estimado.</li>
         </ul>
       </div>
     </div>
@@ -152,46 +138,36 @@ async function actualizarFormula() {
   const res = await fetch(`/produccion/formula/${pid}/${nl}`);
   const data = await res.json();
 
-  // Unidades estimadas
-  document.getElementById('uds_estimadas').value = data.unidades_estimadas;
-  document.getElementById('unidades_producidas').placeholder = data.unidades_estimadas + ' (estimado)';
+  document.getElementById('litros_estimados').value = data.litros_producidos + ' L';
 
-  // Tabla MP
   const bodyMp = document.getElementById('body-mp');
   bodyMp.innerHTML = '';
+  let hayFaltante = false;
   data.consumo.forEach(item => {
-    const ok = (item.cantidad || 0) <= 0 ? true : true; // siempre visible
+    const negativo = item.disponible < 0;
+    if (negativo) hayFaltante = true;
     const tr = document.createElement('tr');
+    if (negativo) tr.classList.add('table-danger');
     tr.innerHTML = `
       <td>${item.nombre}</td>
       <td><strong>${item.cantidad}</strong></td>
       <td>${item.unidad}</td>
-      <td id="stock-${item.mp_id}">—</td>
-      <td id="disp-${item.mp_id}">—</td>
+      <td>${item.stock_actual}</td>
+      <td>${item.disponible}${negativo ? ' <i class="bi bi-exclamation-triangle-fill text-danger"></i>' : ''}</td>
     `;
     bodyMp.appendChild(tr);
   });
   document.getElementById('seccion-mp').style.display = 'block';
 
-  // Empaques
-  const listaEmp = document.getElementById('lista-empaques');
-  listaEmp.innerHTML = '';
-  if (data.empaques.length > 0) {
-    data.empaques.forEach(emp => {
-      const div = document.createElement('div');
-      div.className = 'row g-2 align-items-center mb-2';
-      div.innerHTML = `
-        <input type="hidden" name="empaques_ids" value="${emp.id}">
-        <div class="col-6"><label class="form-label mb-0 small">${emp.nombre}</label>
-          <small class="text-muted d-block">Stock: ${emp.stock_actual} uds</small>
-        </div>
-        <div class="col-6">
-          <input type="number" name="empaques_cant" class="form-control form-control-sm"
-            placeholder="Cantidad a usar" min="0" value="${data.unidades_estimadas}">
-        </div>`;
-      listaEmp.appendChild(div);
-    });
-    document.getElementById('seccion-empaques').style.display = 'block';
+  const alerta = document.getElementById('alerta-stock');
+  const chkWrap = document.getElementById('chk-forzar-wrap');
+  if (hayFaltante) {
+    alerta.style.display = 'block';
+    alerta.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>No hay materia prima suficiente para esta mezcla.';
+    if (chkWrap) chkWrap.style.display = 'block';
+  } else {
+    alerta.style.display = 'none';
+    if (chkWrap) chkWrap.style.display = 'none';
   }
 
   // Fórmula lateral

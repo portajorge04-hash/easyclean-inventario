@@ -27,7 +27,7 @@
         <a href="/produccion" class="btn btn-outline-secondary btn-sm w-100">Limpiar</a>
       </div>
       <div class="col-md-1 text-end">
-        <a href="/produccion/nueva" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Nuevo</a>
+        <a href="/produccion/nueva" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Nueva</a>
       </div>
     </form>
   </div>
@@ -41,12 +41,11 @@
         <thead>
           <tr>
             <th>Código</th>
-            <th>Producto</th>
+            <th>Producto / Fórmula</th>
             <th>Fecha</th>
             <th>Hora</th>
             <th>Lotes</th>
-            <th>Uds. Prod.</th>
-            <th>Uds. Ingr.</th>
+            <th>Litros Prod.</th>
             <th>Operarios</th>
             <th>Estado</th>
             <th></th>
@@ -62,23 +61,20 @@
               {% if lote['hora_inicio'] %}{{ lote['hora_inicio'] }}{% if lote['hora_fin'] %} – {{ lote['hora_fin'] }}{% endif %}{% else %}—{% endif %}
             </td>
             <td class="text-center">{{ lote['num_lotes'] }}</td>
-            <td class="text-center fw-bold">{{ lote['unidades_producidas'] or '—' }}</td>
-            <td class="text-center">{{ lote['unidades_ingresadas'] or '—' }}</td>
+            <td class="text-center fw-bold">{{ lote['litros_producidos'] or '—' }}</td>
             <td style="font-size:.8rem">{{ lote_ops[lote['id']]|join(', ') or '—' }}</td>
             <td>
               {% set f = lote['fase_actual'] %}
-              {% if f == 'Almacenado' or lote['estado'] == 'Completado' %}
-                <span class="badge bg-success">Completado</span>
+              {% if f == 'Aprobado' %}
+                <span class="badge bg-success">Aprobado</span>
+              {% elif f == 'Almacenado' %}
+                <span class="badge bg-success">Completado (histórico)</span>
               {% elif f == 'Etiquetado' %}
-                <span class="badge bg-warning text-dark">Etiquetado</span>
+                <span class="badge bg-warning text-dark">Etiquetado (histórico)</span>
               {% elif f == 'Envasado' %}
-                <span class="badge bg-primary">Envasado</span>
-              {% elif f == 'Control Calidad' %}
-                <span class="badge bg-info text-dark">Control Calidad</span>
-              {% elif lote['estado'] == 'Parcial' %}
-                <span class="badge bg-warning text-dark">Parcial</span>
+                <span class="badge bg-primary">Envasado (histórico)</span>
               {% else %}
-                <span class="badge bg-secondary">{{ lote['estado'] }}</span>
+                <span class="badge bg-info text-dark">Control Calidad</span>
               {% endif %}
             </td>
             <td class="text-nowrap">
@@ -100,7 +96,7 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="10" class="text-center py-5 text-muted">
+            <td colspan="9" class="text-center py-5 text-muted">
               <i class="bi bi-inbox fs-3 d-block mb-2"></i>
               No hay lotes registrados.
               <a href="/produccion/nueva">Registrar el primero</a>

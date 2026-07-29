@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% block title %}Sesión {{ sesion['codigo_sesion'] }}{% endblock %}
+{% block page_title %}Sesión de Envasado: {{ sesion['codigo_sesion'] }}{% endblock %}
+
+{% block content %}
+
+<!-- Stepper de 3 fases -->
+<div class="card mb-3">
+  <div class="card-body py-3 px-4">
+    <p class="text-muted fw-bold mb-3" style="font-size:.72rem;letter-spacing:1px;text-transform:uppercase">
+      <i class="bi bi-diagram-3 me-1"></i>Trazabilidad de esta Sesión
+    </p>
+
+    {% set fases = ['Envasado', 'Etiquetado', 'Almacenado'] %}
+    {% set cantidades = [sesion['unidades_envasadas'], sesion['unidades_etiquetadas'], sesion['unidades_almacenadas']] %}
+    {% set fechas = [sesion['fecha_envasado'], sesion['fecha_etiquetado'], sesion['fecha_almacenamiento']] %}
+    {% set fase_idx = fases.index(sesion['fase_actual']) if sesion['fase_actual'] in fases else 0 %}
+
+    <div class="d-flex align-items-start position-relative mb-3">
+      <div class="position-absolute" style="height:3px;background:#dee2e6;top:19px;left:16%;right:16%;z-index:0;"></div>
+      {% set iconos = ['bi-droplet-half', 'bi-tag', 'bi-box-seam'] %}
+      {% for fase in fases %}
+      {% set i = loop.index0 %}
+      {% set done = cantidades[i] is not none %}
+      {% set active = i == fase_idx and not done %}
+      <div class="text-center flex-fill position-relative" style="z-index:1">
+        <div class="mx-auto rounded-circle d-flex align-items-center justify-content-center mb-1"
+             style="width:38px;height:38px;font-size:.95rem;
+             {% if done %}background:#198754;color:#fff;
+             {% elif active %}border:2.5px solid #0d6efd;color:#0d6efd;background:#fff;
+             {% else %}background:#e9ecef;color:#adb5bd;{% endif %}">
+          {% if done %}<i class="bi bi-check-lg"></i>{% else %}<i class="bi {{ iconos[i] }}"></i>{% endif %}
+        </div>
+        <div style="font-size:.73rem;font-weight:{{ '700' if active else '500' }};color:{% if done %}#198754{% elif active %}#0d6efd{% else %}#adb5bd{% endif %}">{{ fase }}</div>
+        {% if cantidades[i] is not none %}
+        <div style="font-size:.8rem;font-weight:700">{{ cantidades[i] }} uds</div>
+        <div style="font-size:.63rem;color:#6c757d">{{ fechas[i] }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if es_operario_o_admin %}
+      {% if sesion['fase_actual'] == 'Envasado' %}
+      <form method="POST" action="/envasado/{{ sesion['id'] }}/avanzar-fase" class="row g-2 justify-content-center align-items-end">
+        <div class="col-auto">
+          <label class="form-label small mb-1">Unidades realmente etiquetadas</label>
+          <input type="number" name="cantidad" class="form-control form-control-sm" min="0" required
+                 placeholder="{{ sesion['unidades_envasadas'] }} envasadas">
+        </div>
+        {% if es_admin %}
+        <div class="col-auto form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="forzar_stock_negativo" id="fneg1">
+          <label class="form-check-label small text-danger" for="fneg1">Forzar si no hay etiquetas suficientes</label>
+        </div>
+        {% endif %}
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-arrow-right-circle me-1"></i>Completar Etiquetado</button>
+        </div>
+      </form>
+      {% elif sesion['fase_actual'] == 'Etiquetado' %}
+      <form method="POST" action="/envasado/{{ sesion['id'] }}/avanzar-fase" class="row g-2 justify-content-center align-items-end">
+        <div class="col-auto">
+          <label class="form-label small mb-1">Unidades realmente almacenadas (ingresadas a bodega)</label>
+          <input type="number" name="cantidad" class="form-control form-control-sm" min="0" required
+                 placeholder="{{ sesion['unidades_etiquetadas'] }} etiquetadas">
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-arrow-right-circle me-1"></i>Completar Almacenamiento</button>
+        </div>
+      </form>
+      {% else %}
+      <div class="text-center"><span class="badge bg-success px-3 py-2"><i class="bi bi-check-circle me-1"></i>Trazabilidad completa</span></div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Panel de diferencias -->
+{% if d_etiq is not none or d_alm is not none %}
+<div class="card mb-3">
+  <div class="card-body py-3 px-4">
+    <h6 class="card-title mb-3"><i class="bi bi-graph-down-arrow me-1"></i>Diferencias entre fases</h6>
+    <div class="row g-3">
+      {% if d_etiq is not none %}
+      <div class="col-md-6">
+        <div class="d-flex justify-content-between align-items-center p-2 rounded
+          {% if clase_etiq == 'ok' %}bg-success bg-opacity-10{% elif clase_etiq == 'warn' %}bg-warning bg-opacity-10{% else %}bg-danger bg-opacity-10{% endif %}">
+          <span>Envasado → Etiquetado</span>
+          <strong class="{% if clase_etiq == 'ok' %}text-success{% elif clase_etiq == 'warn' %}text-warning{% else %}text-danger{% endif %}">
+            {{ '%+d'|format(d_etiq) }} uds
+          </strong>
+        </div>
+      </div>
+      {% endif %}
+      {% if d_alm is not none %}
+      <div class="col-md-6">
+        <div class="d-flex justify-content-between align-items-center p-2 rounded
+          {% if clase_alm == 'ok' %}bg-success bg-opacity-10{% elif clase_alm == 'warn' %}bg-warning bg-opacity-10{% else %}bg-danger bg-opacity-10{% endif %}">
+          <span>Etiquetado → Almacenado</span>
+          <strong class="{% if clase_alm == 'ok' %}text-success{% elif clase_alm == 'warn' %}text-warning{% else %}text-danger{% endif %}">
+            {{ '%+d'|format(d_alm) }} uds
+          </strong>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <p class="small text-muted mb-0 mt-2">Una diferencia negativa indica unidades perdidas o mal contadas entre fases; una positiva puede indicar un conteo inicial de menos.</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-info-circle me-1"></i>Información</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" style="width:45%;font-weight:500">Código</th><td><code>{{ sesion['codigo_sesion'] }}</code></td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Lote de origen</th><td><a href="/produccion/{{ sesion['lote_id'] }}"><code>{{ sesion['codigo_lote'] }}</code></a></td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Producto</th><td>{{ sesion['producto_nombre'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Fecha</th><td>{{ sesion['fecha'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Litros agregados</th><td>{{ sesion['litros_agregados'] }} L</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Estimado (litros)</th><td>{{ sesion['unidades_teoricas'] or '—' }} uds</td></tr>
+          {% if sesion['observaciones'] %}
+          <tr><th class="text-muted" style="font-weight:500">Obs.</th><td>{{ sesion['observaciones'] }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-people me-1"></i>Operarios</h6>
+        {% if operarios %}
+        <ul class="list-group list-group-flush">
+          {% for op in operarios %}
+          <li class="list-group-item px-0 py-2"><i class="bi bi-person me-2 text-muted"></i>{{ op['nombre'] }}
+            <small class="text-muted float-end">{{ op['cargo'] }}</small></li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="text-muted mb-0">Sin operarios registrados.</p>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-box-seam me-1"></i>Empaques Descontados</h6>
+        {% if empaques %}
+        <ul class="list-group list-group-flush">
+          {% for e in empaques %}
+          <li class="list-group-item px-0 py-2 d-flex justify-content-between">
+            <span>{{ e['nombre'] }} <span class="badge bg-light text-secondary border">{{ e['categoria'] }}</span></span>
+            <strong>{{ e['cantidad_usada'] }} uds</strong>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="text-muted mb-0">Sin empaques registrados.</p>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mt-3 d-flex gap-2">
+  <a href="/envasado" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+  {% if es_admin %}
+  <a href="/envasado/{{ sesion['id'] }}/editar" class="btn btn-outline-primary"><i class="bi bi-pencil me-1"></i>Editar</a>
+  <form method="POST" action="/envasado/{{ sesion['id'] }}/eliminar" onsubmit="return confirm('¿Eliminar esta sesión? Se revertirá el stock de empaques y se recalculará el tanque.');">
+    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash3 me-1"></i>Eliminar</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

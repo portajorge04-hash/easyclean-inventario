@@ -256,12 +256,20 @@
       <i class="bi bi-speedometer2"></i><span class="link-text">Dashboard</span>
     </a>
 
-    <div class="nav-section">Producción</div>
-    <a href="/produccion" class="nav-link-item {% if '/produccion' in request.path and 'nueva' not in request.path and request.path != '/produccion/nueva' %}active{% endif %}">
+    <div class="nav-section">Producción (mezcla)</div>
+    <a href="/produccion" class="nav-link-item {% if '/produccion' in request.path and request.path != '/produccion/nueva' %}active{% endif %}">
       <i class="bi bi-list-check"></i><span class="link-text">Lotes de Producción</span>
     </a>
     <a href="/produccion/nueva" class="nav-link-item {% if request.path=='/produccion/nueva' %}active{% endif %}">
-      <i class="bi bi-plus-circle"></i><span class="link-text">Nuevo Lote</span>
+      <i class="bi bi-plus-circle"></i><span class="link-text">Nueva Mezcla</span>
+    </a>
+
+    <div class="nav-section">Envasado</div>
+    <a href="/envasado" class="nav-link-item {% if '/envasado' in request.path and request.path != '/envasado/nueva' %}active{% endif %}">
+      <i class="bi bi-droplet-half"></i><span class="link-text">Sesiones de Envasado</span>
+    </a>
+    <a href="/envasado/nueva" class="nav-link-item {% if request.path=='/envasado/nueva' %}active{% endif %}">
+      <i class="bi bi-plus-circle-dotted"></i><span class="link-text">Nueva Sesión</span>
     </a>
 
     <div class="nav-section">Inventario</div>
@@ -329,6 +337,14 @@
 
     <h4>{% block page_title %}Inicio{% endblock %}</h4>
 
+    <!-- Estado del tanque de envasado, visible en toda la app -->
+    <a href="/envasado/nueva" class="badge text-decoration-none d-none d-sm-inline-flex align-items-center"
+       style="{% if tanque_actual %}background:#fef3c7;color:#92400e;border:1px solid #fcd34d{% else %}background:#dcfce7;color:#166534;border:1px solid #86efac{% endif %};font-size:.72rem">
+      <i class="bi bi-droplet-half me-1"></i>
+      {% if tanque_actual %}Tanque: {{ '%.1f'|format(tanque_actual.litros) }} L de {{ tanque_actual.producto }}
+      {% else %}Tanque: Vacío{% endif %}
+    </a>
+
     <span class="topbar-date d-none d-sm-inline">
       <i class="bi bi-calendar3 me-1"></i>{{ now.strftime('%d/%m/%Y') if now else '' }}
     </span>
@@ -338,6 +354,10 @@
       {% if session.get('rol') == 'admin' %}
         <span class="badge d-none d-md-inline" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-size:.7rem">
           <i class="bi bi-star-fill me-1"></i>Admin
+        </span>
+      {% elif session.get('rol') == 'operario' %}
+        <span class="badge d-none d-md-inline" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;font-size:.7rem">
+          <i class="bi bi-tools me-1"></i>Operario
         </span>
       {% else %}
         <span class="badge d-none d-md-inline bg-light text-secondary border" style="font-size:.7rem">

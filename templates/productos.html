@@ -4,6 +4,41 @@
 
 {% block content %}
 
+<!-- ══ GRUPOS DE FÓRMULA (productos que comparten la misma mezcla) ═════════════ -->
+<div class="card mb-4">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-2"><i class="bi bi-diagram-2 me-1"></i>Grupos de Fórmula</h6>
+    <p class="text-muted small">Productos en el mismo grupo pueden envasarse desde la misma mezcla del tanque de producción (ej. Material Textil y Gamuza comparten materia prima).</p>
+    <div class="row g-3">
+      <div class="col-md-7">
+        {% if formula_grupos %}
+        <ul class="list-group list-group-flush">
+          {% for g in formula_grupos %}
+          <li class="list-group-item px-0 py-2">
+            <strong>{{ g['nombre'] }}</strong>
+            {% if g['descripcion'] %}<div class="small text-muted">{{ g['descripcion'] }}</div>{% endif %}
+            <div class="small text-muted mt-1">
+              Productos: {{ productos|selectattr('formula_grupo_id', 'equalto', g['id'])|map(attribute='nombre')|join(', ') or '—' }}
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted small">Todavía no hay grupos de fórmula creados.</p>
+        {% endif %}
+      </div>
+      <div class="col-md-5">
+        <form method="POST" action="/productos/grupos/nuevo">
+          <label class="form-label small">Nuevo grupo</label>
+          <input type="text" name="nombre" class="form-control form-control-sm mb-2" placeholder="Ej: Base Textil-Gamuza" required>
+          <input type="text" name="descripcion" class="form-control form-control-sm mb-2" placeholder="Descripción (opcional)">
+          <button class="btn btn-sm btn-outline-primary w-100"><i class="bi bi-plus-circle me-1"></i>Crear grupo</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ PRODUCTOS EXISTENTES ══════════════════════════════════════════════════ -->
 {% for p in productos %}
 <div class="card mb-4">
@@ -15,6 +50,11 @@
       <span class="badge ms-1" style="background:var(--ec-accent);color:#000">
         Código: {{ p['prefijo_lote'] or '—' }}
       </span>
+      {% if p['formula_grupo_id'] %}
+      <span class="badge bg-info text-dark ms-1">
+        <i class="bi bi-diagram-2 me-1"></i>{{ formula_grupos|selectattr('id', 'equalto', p['formula_grupo_id'])|map(attribute='nombre')|first }}
+      </span>
+      {% endif %}
     </div>
     <button class="btn btn-sm btn-outline-light" data-bs-toggle="collapse"
             data-bs-target="#prod{{ p['id'] }}">
@@ -60,6 +100,18 @@
               <input type="text" name="descripcion" class="form-control form-control-sm" value="{{ p['descripcion'] or '' }}">
             </div>
             <button class="btn btn-sm btn-primary w-100">Guardar cambios</button>
+          </form>
+          <form method="POST" action="/productos/{{ p['id'] }}/grupo" class="mt-2">
+            <label class="form-label small">Grupo de fórmula</label>
+            <div class="input-group input-group-sm">
+              <select name="formula_grupo_id" class="form-select form-select-sm">
+                <option value="">— Ninguno —</option>
+                {% for g in formula_grupos %}
+                <option value="{{ g['id'] }}" {% if p['formula_grupo_id']==g['id'] %}selected{% endif %}>{{ g['nombre'] }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-outline-secondary btn-sm">Guardar</button>
+            </div>
           </form>
         </div>
 
@@ -168,9 +220,21 @@
           <small class="text-muted">Ej: GM → GM-20260430-001</small>
         </div>
       </div>
-      <div class="mb-3">
-        <label class="form-label fw-semibold">Descripción</label>
-        <input type="text" name="descripcion" class="form-control" placeholder="Descripción breve del producto">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Descripción</label>
+          <input type="text" name="descripcion" class="form-control" placeholder="Descripción breve del producto">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Grupo de fórmula (opcional)</label>
+          <select name="formula_grupo_id" class="form-select">
+            <option value="">— Ninguno (fórmula propia) —</option>
+            {% for g in formula_grupos %}
+            <option value="{{ g['id'] }}">{{ g['nombre'] }}</option>
+            {% endfor %}
+          </select>
+          <small class="text-muted">Si comparte materia prima con otro producto ya existente, asígnalo al mismo grupo.</small>
+        </div>
       </div>
 
       <!-- Fórmula del nuevo producto -->

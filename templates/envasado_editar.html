@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Editar Sesión{% endblock %}
+{% block page_title %}Editar Sesión: {{ sesion['codigo_sesion'] }}{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body p-4">
+        <div class="alert alert-warning small">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          Al guardar, el estado del tanque de envasado se recalcula automáticamente desde el último vaciado —
+          incluso si hubo sesiones posteriores a esta.
+        </div>
+        <form method="POST">
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Litros agregados</label>
+              <input type="number" step="0.01" name="litros_agregados" class="form-control" value="{{ sesion['litros_agregados'] }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Unidades realmente envasadas</label>
+              <input type="number" name="unidades_envasadas" class="form-control" value="{{ sesion['unidades_envasadas'] }}" required>
+            </div>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Fecha</label>
+              <input type="date" name="fecha" class="form-control" value="{{ sesion['fecha'] }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Hora inicio</label>
+              <input type="time" name="hora_inicio" class="form-control" value="{{ sesion['hora_inicio'] or '' }}">
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Observaciones</label>
+            <textarea name="observaciones" class="form-control" rows="2">{{ sesion['observaciones'] or '' }}</textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i>Guardar Cambios</button>
+            <a href="/envasado/{{ sesion['id'] }}" class="btn btn-outline-secondary">Cancelar</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

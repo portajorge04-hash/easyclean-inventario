@@ -18,40 +18,96 @@
   </div>
 </div>
 
-<!-- Producción del mes -->
+<!-- Producción (mezcla) del mes -->
 <div class="row g-3 mb-3">
-  <div class="col-12">
-    <div class="card">
+  <div class="col-md-6">
+    <div class="card h-100">
       <div class="card-body">
-        <h6 class="card-title mb-3"><i class="bi bi-bar-chart me-1"></i>Producción del mes: {{ mes }}</h6>
+        <h6 class="card-title mb-3"><i class="bi bi-droplet-half me-1"></i>Mezclas del mes: {{ mes }}</h6>
         {% if produccion_mes %}
         <div class="table-responsive">
           <table class="table table-sm">
             <thead>
-              <tr><th>Producto</th><th>Lotes registrados</th><th>Lotes de 80L</th><th>Uds. Producidas</th><th>Uds. Ingresadas</th></tr>
+              <tr><th>Producto / Fórmula</th><th>Lotes</th><th>Litros</th></tr>
             </thead>
             <tbody>
               {% for p in produccion_mes %}
               <tr>
                 <td><strong>{{ p['producto'] }}</strong></td>
                 <td class="text-center">{{ p['lotes'] }}</td>
-                <td class="text-center">{{ p['total_lotes_prod'] }}</td>
-                <td class="text-center"><span class="badge bg-success fs-6">{{ p['total_unidades'] or 0 }}</span></td>
-                <td class="text-center">{{ p['total_ingresadas'] or '—' }}</td>
+                <td class="text-center"><span class="badge bg-primary fs-6">{{ p['total_litros'] or 0 }} L</span></td>
               </tr>
               {% endfor %}
-              <tr class="table-light fw-bold">
-                <td>TOTAL</td>
-                <td class="text-center">{{ produccion_mes|sum(attribute='lotes') }}</td>
-                <td class="text-center">{{ produccion_mes|sum(attribute='total_lotes_prod') }}</td>
-                <td class="text-center">{{ produccion_mes|sum(attribute='total_unidades') }}</td>
-                <td></td>
-              </tr>
             </tbody>
           </table>
         </div>
         {% else %}
-        <p class="text-muted text-center py-3">Sin producción en este mes.</p>
+        <p class="text-muted text-center py-3">Sin mezclas en este mes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-box-seam me-1"></i>Envasado del mes: {{ mes }}</h6>
+        {% if envasado_mes %}
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>Producto</th><th>Sesiones</th><th>Envasadas</th><th>Etiquetadas</th><th>Almacenadas</th></tr>
+            </thead>
+            <tbody>
+              {% for p in envasado_mes %}
+              <tr>
+                <td><strong>{{ p['producto'] }}</strong></td>
+                <td class="text-center">{{ p['sesiones'] }}</td>
+                <td class="text-center"><span class="badge bg-success">{{ p['total_envasadas'] or 0 }}</span></td>
+                <td class="text-center">{{ p['total_etiquetadas'] or '—' }}</td>
+                <td class="text-center">{{ p['total_almacenadas'] or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3">Sin envasado en este mes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-graph-down-arrow me-1"></i>Trazabilidad y Mermas — {{ mes }}</h6>
+        {% if sesiones_con_merma %}
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>Sesión</th><th>Producto</th><th>Envasadas</th><th>Etiquetadas</th><th>Almacenadas</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for s in sesiones_con_merma %}
+              <tr>
+                <td><code>{{ s['codigo_sesion'] }}</code></td>
+                <td>{{ s['producto'] }}</td>
+                <td class="text-center">{{ s['unidades_envasadas'] }}</td>
+                <td class="text-center {{ 'text-danger fw-bold' if s['unidades_etiquetadas'] is not none and s['unidades_etiquetadas'] != s['unidades_envasadas'] }}">
+                  {{ s['unidades_etiquetadas'] if s['unidades_etiquetadas'] is not none else '—' }}
+                </td>
+                <td class="text-center {{ 'text-danger fw-bold' if s['unidades_almacenadas'] is not none and s['unidades_almacenadas'] != s['unidades_etiquetadas'] }}">
+                  {{ s['unidades_almacenadas'] if s['unidades_almacenadas'] is not none else '—' }}
+                </td>
+                <td><a href="/envasado/{{ s['id'] }}">Ver</a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3">Sin diferencias registradas este mes — todo cuadra entre envasado, etiquetado y almacenamiento.</p>
         {% endif %}
       </div>
     </div>

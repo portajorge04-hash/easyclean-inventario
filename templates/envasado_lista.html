@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}Sesiones de Envasado{% endblock %}
+{% block page_title %}Sesiones de Envasado{% endblock %}
+
+{% block content %}
+<!-- Filtros -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form class="row g-2 align-items-end" method="GET">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Producto</label>
+        <select name="producto" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          {% for p in productos %}
+          <option value="{{ p['id'] }}" {% if filtro_prod==p['id']|string %}selected{% endif %}>{{ p['nombre'] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Fecha</label>
+        <input type="date" name="fecha" class="form-control form-control-sm" value="{{ filtro_fecha }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Fase</label>
+        <select name="fase" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          <option value="Envasado" {% if filtro_fase=='Envasado' %}selected{% endif %}>Envasado</option>
+          <option value="Etiquetado" {% if filtro_fase=='Etiquetado' %}selected{% endif %}>Etiquetado</option>
+          <option value="Almacenado" {% if filtro_fase=='Almacenado' %}selected{% endif %}>Almacenado</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary btn-sm w-100">Filtrar</button>
+      </div>
+      <div class="col-md-1 text-end">
+        <a href="/envasado/nueva" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Código</th><th>Lote origen</th><th>Producto</th><th>Fecha</th>
+            <th>Litros</th><th>Envasadas</th><th>Etiquetadas</th><th>Almacenadas</th><th>Fase</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sesiones %}
+          <tr>
+            <td><code>{{ s['codigo_sesion'] }}</code></td>
+            <td><a href="/produccion/{{ s['lote_id'] }}"><code>{{ s['codigo_lote'] }}</code></a></td>
+            <td style="font-size:.85rem">{{ s['producto_nombre'] }}</td>
+            <td>{{ s['fecha'] }}</td>
+            <td class="text-center">{{ s['litros_agregados'] }} L</td>
+            <td class="text-center fw-bold">{{ s['unidades_envasadas'] }}</td>
+            <td class="text-center">{{ s['unidades_etiquetadas'] if s['unidades_etiquetadas'] is not none else '—' }}</td>
+            <td class="text-center">{{ s['unidades_almacenadas'] if s['unidades_almacenadas'] is not none else '—' }}</td>
+            <td>
+              {% if s['fase_actual'] == 'Almacenado' %}<span class="badge bg-success">Almacenado</span>
+              {% elif s['fase_actual'] == 'Etiquetado' %}<span class="badge bg-info text-dark">Etiquetado</span>
+              {% else %}<span class="badge bg-warning text-dark">Envasado</span>{% endif %}
+            </td>
+            <td class="text-nowrap">
+              <a href="/envasado/{{ s['id'] }}" class="btn btn-sm btn-outline-secondary" title="Ver detalle"><i class="bi bi-eye"></i></a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="text-center py-5 text-muted">
+              <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+              No hay sesiones de envasado registradas.
+              <a href="/envasado/nueva">Registrar la primera</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

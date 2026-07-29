@@ -3,59 +3,34 @@
 {% block page_title %}Lote: {{ lote['codigo_lote'] }}{% endblock %}
 
 {% block content %}
-<!-- ── FLUJO DE PRODUCCIÓN ────────────────────────────────────── -->
+<!-- ── ESTADO DEL LOTE (mezcla) ────────────────────────────────── -->
 <div class="card mb-3">
   <div class="card-body py-3 px-4">
     <p class="text-muted fw-bold mb-3" style="font-size:.72rem;letter-spacing:1px;text-transform:uppercase">
-      <i class="bi bi-diagram-3 me-1"></i>Flujo de Producción
+      <i class="bi bi-diagram-3 me-1"></i>Estado de la Mezcla
     </p>
 
-    <div class="d-flex align-items-start position-relative">
-      <div class="position-absolute" style="height:3px;background:#dee2e6;top:19px;left:12.5%;right:12.5%;z-index:0;"></div>
-
-      {% set iconos = ['bi-clipboard2-check','bi-droplet-half','bi-tag','bi-box-seam'] %}
-      {% set fechas = [lote['fecha_control_calidad'], lote['fecha_envasado'], lote['fecha_etiquetado'], lote['fecha_almacenamiento']] %}
-
-      {% for fase in fases %}
-      {% set i = loop.index0 %}
-      {% set done = i < fase_idx %}
-      {% set active = i == fase_idx %}
-      <div class="text-center flex-fill position-relative" style="z-index:1">
-        <div class="mx-auto rounded-circle d-flex align-items-center justify-content-center mb-1"
-             style="width:38px;height:38px;font-size:.95rem;
-             {% if done %}background:#198754;color:#fff;
-             {% elif active %}border:2.5px solid #0d6efd;color:#0d6efd;background:#fff;
-             {% else %}background:#e9ecef;color:#adb5bd;{% endif %}">
-          {% if done %}<i class="bi bi-check-lg"></i>
-          {% else %}<i class="bi {{ iconos[i] }}"></i>{% endif %}
-        </div>
-        <div style="font-size:.73rem;line-height:1.2;
-                    font-weight:{% if active %}700{% else %}500{% endif %};
-                    color:{% if done %}#198754{% elif active %}#0d6efd{% else %}#adb5bd{% endif %}">
-          {{ fase }}
-        </div>
-        {% if fechas[i] %}
-        <div style="font-size:.63rem;color:#6c757d;margin-top:2px">{{ fechas[i] }}</div>
-        {% elif active %}
-        <div style="font-size:.63rem;color:#0d6efd;margin-top:2px">← Actual</div>
-        {% endif %}
+    <div class="d-flex align-items-center gap-3">
+      <div class="rounded-circle d-flex align-items-center justify-content-center"
+           style="width:38px;height:38px;font-size:.95rem;
+           {% if fase_actual == 'Aprobado' %}background:#198754;color:#fff;
+           {% else %}border:2.5px solid #0d6efd;color:#0d6efd;background:#fff;{% endif %}">
+        {% if fase_actual == 'Aprobado' %}<i class="bi bi-check-lg"></i>{% else %}<i class="bi bi-clipboard2-check"></i>{% endif %}
       </div>
-      {% endfor %}
-    </div>
-
-    <div class="text-center mt-3">
-      {% if siguiente_fase %}
-      <form method="POST" action="/produccion/{{ lote['id'] }}/avanzar-fase" style="display:inline">
-        <button type="submit" class="btn btn-primary btn-sm px-4">
-          <i class="bi bi-arrow-right-circle me-1"></i>
-          Completar <strong>{{ lote['fase_actual'] or 'Control Calidad' }}</strong>
-          &nbsp;→&nbsp; pasar a <strong>{{ siguiente_fase }}</strong>
+      <div class="flex-fill">
+        <div style="font-weight:700">{{ 'Aprobado — Control de Calidad' if fase_actual == 'Aprobado' else 'Pendiente de Control de Calidad' }}</div>
+        {% if lote['fecha_control_calidad'] %}<div class="small text-muted">{{ lote['fecha_control_calidad'] }}</div>{% endif %}
+      </div>
+      {% if fase_actual != 'Aprobado' and es_operario_o_admin %}
+      <form method="POST" action="/produccion/{{ lote['id'] }}/aprobar-qc">
+        <button type="submit" class="btn btn-primary btn-sm px-3">
+          <i class="bi bi-check-circle me-1"></i>Aprobar Control de Calidad
         </button>
       </form>
-      {% else %}
-      <span class="badge bg-success px-3 py-2" style="font-size:.8rem">
-        <i class="bi bi-check-circle me-1"></i>Todas las fases completadas — Lote en bodega
-      </span>
+      {% elif fase_actual == 'Aprobado' %}
+      <a href="/envasado/nueva" class="btn btn-outline-primary btn-sm px-3">
+        <i class="bi bi-droplet-half me-1"></i>Envasar desde este lote
+      </a>
       {% endif %}
     </div>
   </div>
@@ -63,24 +38,24 @@
 <!-- ─────────────────────────────────────────────────────────── -->
 <div class="row g-3">
   <!-- Info General -->
-  <div class="col-md-4">
+  <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
         <h6 class="card-title mb-3"><i class="bi bi-info-circle me-1"></i>Información General</h6>
         <table class="table table-sm table-borderless mb-0">
           <tr><th class="text-muted" style="width:45%;font-weight:500">Código</th><td><code>{{ lote['codigo_lote'] }}</code></td></tr>
-          <tr><th class="text-muted" style="font-weight:500">Producto</th><td>{{ lote['producto_nombre'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Producto / fórmula</th><td>{{ lote['producto_nombre'] }}</td></tr>
           <tr><th class="text-muted" style="font-weight:500">Fecha</th><td>{{ lote['fecha_produccion'] }}</td></tr>
           <tr><th class="text-muted" style="font-weight:500">Hora inicio</th><td>{{ lote['hora_inicio'] or '—' }}</td></tr>
           <tr><th class="text-muted" style="font-weight:500">Hora fin</th><td>{{ lote['hora_fin'] or '—' }}</td></tr>
-          <tr><th class="text-muted" style="font-weight:500">Lotes prod.</th><td>{{ lote['num_lotes'] }}</td></tr>
-          <tr><th class="text-muted" style="font-weight:500">Uds. prod.</th><td><strong>{{ lote['unidades_producidas'] or '—' }}</strong></td></tr>
-          <tr><th class="text-muted" style="font-weight:500">Uds. ingr.</th><td>{{ lote['unidades_ingresadas'] or '—' }}</td></tr>
-          <tr><th class="text-muted" style="font-weight:500">Estado</th>
+          <tr><th class="text-muted" style="font-weight:500">Lotes mezclados</th><td>{{ lote['num_lotes'] }}</td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Litros producidos</th><td><strong>{{ lote['litros_producidos'] or '—' }} L</strong></td></tr>
+          <tr><th class="text-muted" style="font-weight:500">Litros disponibles</th>
             <td>
-              {% if lote['estado'] == 'Completado' %}<span class="badge bg-success">Completado</span>
-              {% elif lote['estado'] == 'Parcial' %}<span class="badge bg-warning text-dark">Parcial</span>
-              {% else %}<span class="badge bg-info text-dark">{{ lote['estado'] }}</span>{% endif %}
+              {% if litros_disp is not none %}
+                <strong class="{{ 'text-success' if litros_disp > 0 else 'text-muted' }}">{{ litros_disp }} L</strong>
+                {% if litros_disp <= 0 %}<span class="badge bg-secondary ms-1">Agotado</span>{% endif %}
+              {% else %}—{% endif %}
             </td>
           </tr>
           {% if lote['observaciones'] %}
@@ -92,10 +67,10 @@
   </div>
 
   <!-- Operarios -->
-  <div class="col-md-4">
+  <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
-        <h6 class="card-title mb-3"><i class="bi bi-people me-1"></i>Operarios</h6>
+        <h6 class="card-title mb-3"><i class="bi bi-people me-1"></i>Operarios de la Mezcla</h6>
         {% if operarios %}
         <ul class="list-group list-group-flush">
           {% for op in operarios %}
@@ -112,23 +87,41 @@
     </div>
   </div>
 
-  <!-- Empaques -->
-  <div class="col-md-4">
-    <div class="card h-100">
+  <!-- Sesiones de envasado -->
+  <div class="col-12">
+    <div class="card">
       <div class="card-body">
-        <h6 class="card-title mb-3"><i class="bi bi-box-seam me-1"></i>Empaques Utilizados</h6>
-        {% if consumo_emp %}
-        <ul class="list-group list-group-flush">
-          {% for e in consumo_emp %}
-          <li class="list-group-item px-0 py-2 d-flex justify-content-between">
-            <span>{{ e['nombre'] }}</span>
-            <strong>{{ e['cantidad_usada'] }} uds</strong>
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="text-muted">No se registraron empaques.</p>
-        {% endif %}
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="card-title mb-0"><i class="bi bi-droplet-half me-1"></i>Sesiones de Envasado desde este Lote</h6>
+          {% if fase_actual == 'Aprobado' and litros_disp and litros_disp > 0 %}
+          <a href="/envasado/nueva" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-circle me-1"></i>Nueva sesión</a>
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>Código</th><th>Producto</th><th>Litros</th><th>Uds. envasadas</th><th>Fase</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for s in sesiones %}
+              <tr>
+                <td><code>{{ s['codigo_sesion'] }}</code></td>
+                <td>{{ s['producto_nombre'] }}</td>
+                <td>{{ s['litros_agregados'] }} L</td>
+                <td><strong>{{ s['unidades_envasadas'] }}</strong></td>
+                <td>
+                  {% if s['fase_actual'] == 'Almacenado' %}<span class="badge bg-success">Almacenado</span>
+                  {% elif s['fase_actual'] == 'Etiquetado' %}<span class="badge bg-info text-dark">Etiquetado</span>
+                  {% else %}<span class="badge bg-warning text-dark">Envasado</span>{% endif %}
+                </td>
+                <td><a href="/envasado/{{ s['id'] }}" class="btn btn-sm btn-outline-secondary">Ver</a></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-muted text-center">Todavía no se ha envasado nada de este lote</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -137,7 +130,7 @@
   <div class="col-12">
     <div class="card">
       <div class="card-body">
-        <h6 class="card-title mb-3"><i class="bi bi-flask me-1"></i>Materias Primas Consumidas</h6>
+        <h6 class="card-title mb-3"><i class="bi bi-flask me-1"></i>Materias Primas Consumidas (al mezclar)</h6>
         <div class="table-responsive">
           <table class="table table-sm">
             <thead>
@@ -159,6 +152,25 @@
       </div>
     </div>
   </div>
+
+  {% if consumo_emp %}
+  <!-- Empaques (solo lotes antiguos, previos al flujo de dos fases) -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-box-seam me-1"></i>Empaques Utilizados (registro histórico)</h6>
+        <ul class="list-group list-group-flush">
+          {% for e in consumo_emp %}
+          <li class="list-group-item px-0 py-2 d-flex justify-content-between">
+            <span>{{ e['nombre'] }}</span>
+            <strong>{{ e['cantidad_usada'] }} uds</strong>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="mt-3">

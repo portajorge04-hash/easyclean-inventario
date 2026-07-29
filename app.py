@@ -6,6 +6,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import os
 import traceback
+import random
+import smtplib
+from email.mime.text import MIMEText
 
 app = Flask(__name__)
 app.secret_key = 'easyclean_pro_2025_seguro'
@@ -20,7 +23,10 @@ def error_500(e):
 
 @app.before_request
 def verificar_sesion():
-    rutas_publicas = {'login', 'static'}
+    rutas_publicas = {
+        'login', 'static',
+        'solicitar_reset_password', 'verificar_codigo_reset', 'nueva_password_reset',
+    }
     if request.endpoint and request.endpoint not in rutas_publicas:
         if 'user_id' not in session:
             return redirect(url_for('login'))
@@ -34,8 +40,20 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def operario_o_admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('rol') not in ('admin', 'operario'):
+            flash('No tienes permisos para realizar esta acción.', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
 def es_admin():
     return session.get('rol') == 'admin'
+
+def es_operario_o_admin():
+    return session.get('rol') in ('admin', 'operario')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -64,6 +82,115 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+def enviar_correo(destinatario, asunto, cuerpo):
+    """Envía un correo por SMTP. Requiere SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS
+    configurados como variables de entorno. No lanza excepción hacia afuera:
+    devuelve True/False para que la ruta que llama decida qué mostrar al usuario."""
+    host = os.environ.get('SMTP_HOST', '')
+    port = int(os.environ.get('SMTP_PORT', '587') or 587)
+    user = os.environ.get('SMTP_USER', '')
+    pw   = os.environ.get('SMTP_PASS', '')
+    remitente = os.environ.get('SMTP_FROM', user)
+    if not (host and user and pw):
+        print('[EMAIL] SMTP no configurado (faltan variables de entorno) — no se envió el correo.')
+        return False
+    try:
+        msg = MIMEText(cuerpo)
+        msg['Subject'] = asunto
+        msg['From'] = remitente
+        msg['To'] = destinatario
+        with smtplib.SMTP(host, port, timeout=10) as server:
+            server.starttls()
+            server.login(user, pw)
+            server.sendmail(remitente, [destinatario], msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[EMAIL] Error enviando correo: {e}')
+        return False
+
+@app.route('/login/olvide-password', methods=['GET', 'POST'])
+def solicitar_reset_password():
+    if request.method == 'POST':
+        db = get_db()
+        identificador = request.form.get('identificador', '').strip().lower()
+        usuario = db.execute(
+            "SELECT * FROM usuarios WHERE (username=? OR email=?) AND activo=1",
+            (identificador, identificador)
+        ).fetchone()
+        # Siempre mostramos el mismo mensaje exista o no el usuario, para no revelar qué cuentas existen
+        if usuario and usuario['email']:
+            codigo = f"{random.randint(0, 999999):06d}"
+            expira = (datetime.now() + timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
+            db.execute(
+                "INSERT INTO password_reset_tokens (usuario_id, codigo, expira_en) VALUES (?,?,?)",
+                (usuario['id'], codigo, expira)
+            )
+            db.commit()
+            enviado = enviar_correo(
+                usuario['email'],
+                'Código para restablecer tu contraseña — EasyClean Inventario',
+                f'Hola {usuario["nombre"]},\n\nTu código para restablecer la contraseña es: {codigo}\n'
+                f'Este código vence en 15 minutos.\n\nSi no lo solicitaste, ignora este correo.'
+            )
+            session['reset_usuario_id'] = usuario['id']
+            if not enviado:
+                flash('No se pudo enviar el correo (revisa la configuración SMTP del servidor). Contacta a un administrador.', 'danger')
+                db.close()
+                return redirect(url_for('solicitar_reset_password'))
+        db.close()
+        flash('Si el usuario existe y tiene correo registrado, se envió un código de verificación.', 'info')
+        return redirect(url_for('verificar_codigo_reset'))
+    return render_template('reset_solicitar.html')
+
+@app.route('/login/verificar-codigo', methods=['GET', 'POST'])
+def verificar_codigo_reset():
+    if request.method == 'POST':
+        usuario_id = session.get('reset_usuario_id')
+        codigo = request.form.get('codigo', '').strip()
+        if not usuario_id:
+            flash('Vuelve a solicitar el código.', 'warning')
+            return redirect(url_for('solicitar_reset_password'))
+        db = get_db()
+        token = db.execute("""
+            SELECT * FROM password_reset_tokens
+            WHERE usuario_id=? AND codigo=? AND usado=0
+            ORDER BY id DESC LIMIT 1
+        """, (usuario_id, codigo)).fetchone()
+        if not token or token['expira_en'] < datetime.now().strftime('%Y-%m-%d %H:%M:%S'):
+            flash('Código inválido o vencido.', 'danger')
+            db.close()
+            return redirect(url_for('verificar_codigo_reset'))
+        db.execute("UPDATE password_reset_tokens SET usado=1 WHERE id=?", (token['id'],))
+        db.commit()
+        db.close()
+        session['reset_verificado'] = True
+        return redirect(url_for('nueva_password_reset'))
+    return render_template('reset_verificar.html')
+
+@app.route('/login/nueva-password', methods=['GET', 'POST'])
+def nueva_password_reset():
+    usuario_id = session.get('reset_usuario_id')
+    if not usuario_id or not session.get('reset_verificado'):
+        flash('Primero verifica tu código.', 'warning')
+        return redirect(url_for('solicitar_reset_password'))
+    if request.method == 'POST':
+        nueva_pw = request.form.get('password', '')
+        if len(nueva_pw) < 6:
+            flash('La contraseña debe tener al menos 6 caracteres.', 'warning')
+            return redirect(url_for('nueva_password_reset'))
+        db = get_db()
+        db.execute("UPDATE usuarios SET password_hash=? WHERE id=?",
+                   (generate_password_hash(nueva_pw), usuario_id))
+        u = db.execute("SELECT username FROM usuarios WHERE id=?", (usuario_id,)).fetchone()
+        registrar_log(db, 'Reset contraseña', 'Usuarios', f'{u["username"]} restableció su contraseña por correo')
+        db.commit()
+        db.close()
+        session.pop('reset_usuario_id', None)
+        session.pop('reset_verificado', None)
+        flash('Contraseña actualizada. Ya puedes iniciar sesión.', 'success')
+        return redirect(url_for('login'))
+    return render_template('reset_nueva_password.html')
+
 # ─── Gestión de usuarios (solo admin) ─────────────────────────────────────────
 
 @app.route('/admin/usuarios', methods=['GET', 'POST'])
@@ -76,18 +203,27 @@ def admin_usuarios():
             username = request.form['username'].strip().lower()
             nombre   = request.form['nombre'].strip()
             password = request.form['password']
+            email    = request.form.get('email', '').strip().lower() or None
             rol      = request.form.get('rol', 'viewer')
             existe = db.execute("SELECT id FROM usuarios WHERE username=?", (username,)).fetchone()
             if existe:
                 flash(f'El usuario "{username}" ya existe.', 'warning')
             else:
                 db.execute(
-                    "INSERT INTO usuarios (username, password_hash, nombre, rol) VALUES (?,?,?,?)",
-                    (username, generate_password_hash(password), nombre, rol)
+                    "INSERT INTO usuarios (username, password_hash, nombre, rol, email) VALUES (?,?,?,?,?)",
+                    (username, generate_password_hash(password), nombre, rol, email)
                 )
                 registrar_log(db, 'Nuevo usuario', 'Usuarios', f'{username} ({rol})')
                 db.commit()
                 flash(f'Usuario "{username}" creado correctamente.', 'success')
+        elif accion == 'editar_email':
+            uid   = request.form['usuario_id']
+            email = request.form.get('email', '').strip().lower() or None
+            u = db.execute("SELECT username FROM usuarios WHERE id=?", (uid,)).fetchone()
+            db.execute("UPDATE usuarios SET email=? WHERE id=?", (email, uid))
+            registrar_log(db, 'Editar email', 'Usuarios', f'{u["username"]} → {email}')
+            db.commit()
+            flash('Correo actualizado.', 'success')
         elif accion == 'toggle':
             uid = request.form['usuario_id']
             if int(uid) == session['user_id']:
@@ -117,7 +253,18 @@ def admin_usuarios():
 
 @app.context_processor
 def inject_now():
-    return {'now': datetime.now(), 'session': session, 'USE_PG': USE_PG}
+    tanque_actual = None
+    if 'user_id' in session:
+        try:
+            db = get_db()
+            t = obtener_tanque(db)
+            if t and t['litros_actuales'] and t['litros_actuales'] > 0:
+                prod = db.execute("SELECT nombre FROM productos WHERE id=?", (t['producto_id'],)).fetchone()
+                tanque_actual = {'litros': t['litros_actuales'], 'producto': prod['nombre'] if prod else '—'}
+            db.close()
+        except Exception:
+            tanque_actual = None
+    return {'now': datetime.now(), 'session': session, 'USE_PG': USE_PG, 'tanque_actual': tanque_actual}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,6 +322,98 @@ def calcular_consumo(producto_id, num_lotes, db):
         })
     return consumo
 
+# ─── Producción de dos fases: helpers de envasado/tanque ──────────────────────
+
+CAPACIDAD_TANQUE_ENVASADO_L = 20
+
+def grupo_compatible(producto_a, producto_b):
+    """¿Puede envasarse producto_a con líquido mezclado originalmente como producto_b?"""
+    if producto_a is None or producto_b is None:
+        return False
+    if producto_a['id'] == producto_b['id']:
+        return True
+    ga = producto_a['formula_grupo_id']
+    gb = producto_b['formula_grupo_id']
+    return ga is not None and ga == gb
+
+def generar_codigo_sesion(lote, db):
+    n = db.execute(
+        "SELECT COUNT(*) as n FROM envasado_sesiones WHERE lote_id=?", (lote['id'],)
+    ).fetchone()['n']
+    return f"{lote['codigo_lote']}-E{n + 1:02d}"
+
+def litros_disponibles_lote(lote_id, db):
+    lote = db.execute("SELECT litros_producidos FROM lotes_produccion WHERE id=?", (lote_id,)).fetchone()
+    if not lote or lote['litros_producidos'] is None:
+        return 0
+    usados = db.execute(
+        "SELECT COALESCE(SUM(litros_agregados),0) as total FROM envasado_sesiones WHERE lote_id=?",
+        (lote_id,)
+    ).fetchone()['total']
+    return round(lote['litros_producidos'] - usados, 4)
+
+def recalcular_tanque(db):
+    """Recalcula desde cero el estado del tanque de envasado (litros_actuales,
+    lote_id y formula_grupo_id actuales), reproduciendo en orden cronológico
+    todas las sesiones de envasado desde el último evento de vaciado. Se llama
+    después de CUALQUIER creación/edición/eliminación de una envasado_sesion,
+    así una edición a una sesión antigua se refleja en cascada automáticamente."""
+    ultimo_vaciado = db.execute(
+        "SELECT fecha_hora FROM envasado_tanque_eventos WHERE tipo='vaciado' ORDER BY fecha_hora DESC, id DESC LIMIT 1"
+    ).fetchone()
+    desde = ultimo_vaciado['fecha_hora'] if ultimo_vaciado else '0000-00-00 00:00:00'
+
+    sesiones = db.execute("""
+        SELECT es.*, p.tamano_envase_ml, p.formula_grupo_id as producto_grupo_id
+        FROM envasado_sesiones es JOIN productos p ON p.id = es.producto_id
+        WHERE (es.fecha || ' ' || COALESCE(es.hora_inicio, '00:00')) >= ?
+        ORDER BY es.fecha ASC, COALESCE(es.hora_inicio, '00:00') ASC, es.id ASC
+    """, (desde,)).fetchall()
+
+    litros = 0.0
+    lote_id = None
+    producto_id = None
+    grupo_id = None
+    for s in sesiones:
+        litros += s['litros_agregados'] or 0
+        litros -= (s['unidades_envasadas'] or 0) * s['tamano_envase_ml'] / 1000
+        litros = max(0.0, litros)
+        lote_id = s['lote_id']
+        producto_id = s['producto_id']
+        grupo_id = s['producto_grupo_id']
+
+    if litros <= 0:
+        lote_id = None
+        producto_id = None
+        grupo_id = None
+
+    db.execute("""
+        UPDATE envasado_tanque
+        SET lote_id=?, producto_id=?, formula_grupo_id=?, litros_actuales=?, actualizado_en=CURRENT_TIMESTAMP
+        WHERE id=1
+    """, (lote_id, producto_id, grupo_id, round(litros, 4)))
+
+def obtener_tanque(db):
+    t = db.execute("SELECT * FROM envasado_tanque WHERE id=1").fetchone()
+    if not t:
+        db.execute(
+            "INSERT INTO envasado_tanque (id, lote_id, producto_id, formula_grupo_id, litros_actuales) "
+            "VALUES (1, NULL, NULL, NULL, 0)")
+        db.commit()
+        t = db.execute("SELECT * FROM envasado_tanque WHERE id=1").fetchone()
+    return t
+
+def verificar_stock_suficiente(db, deltas):
+    """deltas: lista de (tabla, columna_stock, id, cantidad_a_descontar, nombre_para_mensaje).
+    Solo lee, no escribe. Devuelve lista de mensajes de faltantes (vacía si todo alcanza)."""
+    faltantes = []
+    for tabla, columna_stock, row_id, cantidad, nombre in deltas:
+        row = db.execute(f"SELECT {columna_stock} as stock FROM {tabla} WHERE id=?", (row_id,)).fetchone()
+        stock_actual = row['stock'] if row else 0
+        if stock_actual - cantidad < 0:
+            faltantes.append(f'{nombre}: disponible {stock_actual}, se necesitan {cantidad}')
+    return faltantes
+
 # ─── Dashboard ────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -186,11 +425,13 @@ def dashboard():
     stats = {}
     for p in productos:
         ultimo = db.execute(
-            "SELECT fecha_produccion, unidades_producidas FROM lotes_produccion WHERE producto_id=? ORDER BY id DESC LIMIT 1",
+            "SELECT fecha as fecha_produccion, unidades_envasadas as unidades_producidas "
+            "FROM envasado_sesiones WHERE producto_id=? ORDER BY id DESC LIMIT 1",
             (p['id'],)
         ).fetchone()
         total_mes = db.execute(
-            "SELECT COALESCE(SUM(unidades_producidas),0) as total FROM lotes_produccion WHERE producto_id=? AND substr(fecha_produccion, 1, 7)=?",
+            "SELECT COALESCE(SUM(unidades_envasadas),0) as total FROM envasado_sesiones "
+            "WHERE producto_id=? AND substr(fecha, 1, 7)=?",
             (p['id'], mes_actual)
         ).fetchone()['total']
         stats[p['id']] = {'ultimo': ultimo, 'total_mes': total_mes}
@@ -210,15 +451,15 @@ def dashboard():
         ORDER BY lp.id DESC LIMIT 5
     """).fetchall()
 
-    # Producción últimos 7 días para gráfico
+    # Envasado (unidades reales) últimos 7 días para gráfico
     hace_7 = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
     datos_grafico = db.execute("""
-        SELECT fecha_produccion, p.nombre as producto,
-               SUM(unidades_producidas) as total
-        FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
-        WHERE fecha_produccion >= ?
-        GROUP BY fecha_produccion, lp.producto_id, p.nombre
-        ORDER BY fecha_produccion
+        SELECT es.fecha as fecha_produccion, p.nombre as producto,
+               SUM(es.unidades_envasadas) as total
+        FROM envasado_sesiones es JOIN productos p ON p.id=es.producto_id
+        WHERE es.fecha >= ?
+        GROUP BY es.fecha, es.producto_id, p.nombre
+        ORDER BY es.fecha
     """, (hace_7,)).fetchall()
 
     db.close()
@@ -265,45 +506,49 @@ def produccion_lista():
                            filtro_prod=filtro_prod, filtro_fecha=filtro_fecha)
 
 @app.route('/produccion/nueva', methods=['GET', 'POST'])
+@operario_o_admin_required
 def produccion_nueva():
     db = get_db()
     if request.method == 'POST':
-        if not es_admin():
-            flash('Solo los administradores pueden registrar lotes.', 'danger')
-            db.close()
-            return redirect(url_for('produccion_nueva'))
         producto_id = int(request.form['producto_id'])
         fecha = request.form['fecha_produccion']
         hora_inicio = request.form.get('hora_inicio', '')
         hora_fin = request.form.get('hora_fin', '')
         num_lotes = int(request.form.get('num_lotes', 1))
-        unidades_producidas = request.form.get('unidades_producidas', '')
-        unidades_ingresadas = request.form.get('unidades_ingresadas', '')
-        estado = request.form.get('estado', 'Completado')
         observaciones = request.form.get('observaciones', '')
         operarios_ids = request.form.getlist('operarios')
+        forzar_negativo = es_admin() and request.form.get('forzar_stock_negativo') == 'on'
 
         prod = db.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
-        if not unidades_producidas:
-            unidades_producidas = prod['unidades_por_lote'] * num_lotes
+        litros_producidos = round((prod['litros_por_lote'] or 0) * num_lotes, 4)
+
+        # Verificar stock suficiente de materia prima ANTES de escribir nada
+        consumo = calcular_consumo(producto_id, num_lotes, db)
+        deltas = [('materias_primas', 'stock_actual', item['mp_id'], item['cantidad'], item['nombre'])
+                  for item in consumo]
+        faltantes = verificar_stock_suficiente(db, deltas)
+        if faltantes and not forzar_negativo:
+            db.close()
+            flash('No hay materia prima suficiente para esta mezcla: ' + '; '.join(faltantes) +
+                  '. Un administrador puede forzar la operación si el stock en el sistema está desactualizado.', 'danger')
+            return redirect(url_for('produccion_nueva'))
 
         codigo = generar_codigo_lote(producto_id, db)
 
         db.execute("""
             INSERT INTO lotes_produccion
             (codigo_lote, producto_id, fecha_produccion, hora_inicio, hora_fin,
-             num_lotes, unidades_producidas, unidades_ingresadas, estado, observaciones)
+             num_lotes, observaciones, litros_producidos, formula_grupo_id, fase_actual)
             VALUES (?,?,?,?,?,?,?,?,?,?)
         """, (codigo, producto_id, fecha, hora_inicio, hora_fin,
-              num_lotes, unidades_producidas, unidades_ingresadas or None, estado, observaciones))
+              num_lotes, observaciones, litros_producidos, prod['formula_grupo_id'], 'Control Calidad'))
 
         lote_id = db.last_id()
 
         for op_id in operarios_ids:
             db.execute("INSERT OR IGNORE INTO lote_operarios VALUES (?,?)", (lote_id, op_id))
 
-        # Descontar materia prima
-        consumo = calcular_consumo(producto_id, num_lotes, db)
+        # Descontar materia prima (puede quedar negativa solo si un admin forzó la operación)
         for item in consumo:
             db.execute(
                 "INSERT INTO lote_consumo_mp (lote_id, materia_prima_id, cantidad_usada, unidad) VALUES (?,?,?,?)",
@@ -314,47 +559,43 @@ def produccion_nueva():
                 (item['cantidad'], item['mp_id'])
             )
 
-        # Descontar empaques
-        empaques_ids = request.form.getlist('empaques_ids')
-        empaques_cant = request.form.getlist('empaques_cant')
-        for emp_id, cant in zip(empaques_ids, empaques_cant):
-            if cant and int(cant) > 0:
-                db.execute(
-                    "INSERT INTO lote_consumo_empaque (lote_id, tipo_empaque_id, cantidad_usada) VALUES (?,?,?)",
-                    (lote_id, emp_id, int(cant))
-                )
-                db.execute(
-                    "UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?",
-                    (int(cant), emp_id)
-                )
+        if faltantes:
+            registrar_log(db, 'Stock forzado a negativo', 'Producción',
+                          f'Lote {codigo} — {"; ".join(faltantes)} (forzado por {session.get("nombre","")})')
 
-        registrar_log(db, 'Nuevo lote', 'Producción', f'Lote {codigo} — {prod["nombre"]} × {num_lotes}')
+        registrar_log(db, 'Nuevo lote (mezcla)', 'Producción',
+                      f'Lote {codigo} — {prod["nombre"]} × {num_lotes} ({litros_producidos} L)')
         db.commit()
-        flash(f'Lote {codigo} registrado correctamente.', 'success')
+        flash(f'Lote {codigo} mezclado correctamente ({litros_producidos} L). '
+              f'Pasa por Control de Calidad antes de poder envasarlo.', 'success')
         db.close()
-        return redirect(url_for('produccion_lista'))
+        return redirect(url_for('produccion_detalle', lote_id=lote_id))
 
     productos = db.execute("SELECT * FROM productos").fetchall()
     operarios = db.execute("SELECT * FROM operarios WHERE activo=1 ORDER BY nombre").fetchall()
     hoy = date.today().isoformat()
     db.close()
-    return render_template('produccion_nueva.html', productos=productos, operarios=operarios, hoy=hoy)
+    return render_template('produccion_nueva.html', productos=productos, operarios=operarios, hoy=hoy,
+                           es_admin=es_admin())
 
 @app.route('/produccion/formula/<int:producto_id>/<int:num_lotes>')
 def formula_json(producto_id, num_lotes):
     db = get_db()
     consumo = calcular_consumo(producto_id, num_lotes, db)
     prod = db.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
-    empaques = db.execute("SELECT * FROM tipos_empaque WHERE producto_id=?", (producto_id,)).fetchall()
-    unidades = prod['unidades_por_lote'] * num_lotes
+    for item in consumo:
+        mp = db.execute("SELECT stock_actual FROM materias_primas WHERE id=?", (item['mp_id'],)).fetchone()
+        item['stock_actual'] = mp['stock_actual'] if mp else 0
+        item['disponible'] = round((mp['stock_actual'] if mp else 0) - item['cantidad'], 4)
+    litros = round((prod['litros_por_lote'] or 0) * num_lotes, 4)
     db.close()
     return jsonify({
         'consumo': consumo,
-        'unidades_estimadas': unidades,
-        'empaques': [{k: e[k] for k in e.keys()} for e in empaques]
+        'litros_producidos': litros,
     })
 
-FASES_PRODUCCION = ['Control Calidad', 'Envasado', 'Etiquetado', 'Almacenado']
+FASES_LOTE = ['Control Calidad', 'Aprobado']
+FASES_ENVASADO = ['Envasado', 'Etiquetado', 'Almacenado']
 
 @app.route('/produccion/<int:lote_id>')
 def produccion_detalle(lote_id):
@@ -386,14 +627,20 @@ def produccion_detalle(lote_id):
     """, (lote_id,)).fetchall()
 
     fase_actual = lote['fase_actual'] if lote['fase_actual'] else 'Control Calidad'
-    fase_idx = FASES_PRODUCCION.index(fase_actual) if fase_actual in FASES_PRODUCCION else 0
-    siguiente_fase = FASES_PRODUCCION[fase_idx + 1] if fase_idx < len(FASES_PRODUCCION) - 1 else None
+    litros_disp = litros_disponibles_lote(lote_id, db) if lote['litros_producidos'] is not None else None
+
+    sesiones = db.execute("""
+        SELECT es.*, p.nombre as producto_nombre
+        FROM envasado_sesiones es JOIN productos p ON p.id = es.producto_id
+        WHERE es.lote_id=? ORDER BY es.fecha DESC, es.id DESC
+    """, (lote_id,)).fetchall()
 
     db.close()
     return render_template('produccion_detalle.html',
         lote=lote, operarios=operarios,
         consumo_mp=consumo_mp, consumo_emp=consumo_emp,
-        fase_idx=fase_idx, siguiente_fase=siguiente_fase, fases=FASES_PRODUCCION,
+        fase_actual=fase_actual, litros_disp=litros_disp, sesiones=sesiones,
+        es_operario_o_admin=es_operario_o_admin(),
     )
 
 @app.route('/produccion/<int:lote_id>/editar', methods=['GET', 'POST'])
@@ -411,18 +658,25 @@ def editar_lote(lote_id):
         db.close()
         return redirect(url_for('produccion_lista'))
 
+    tiene_sesiones = db.execute(
+        "SELECT COUNT(*) as n FROM envasado_sesiones WHERE lote_id=?", (lote_id,)
+    ).fetchone()['n'] > 0
+
     if request.method == 'POST':
         nueva_fecha       = request.form['fecha_produccion']
         nueva_hora_inicio = request.form.get('hora_inicio', '')
         nueva_hora_fin    = request.form.get('hora_fin', '')
         nuevo_num_lotes   = int(request.form.get('num_lotes', lote['num_lotes']))
-        nuevas_unidades   = request.form.get('unidades_producidas') or lote['unidades_producidas']
-        nuevas_uds_ing    = request.form.get('unidades_ingresadas') or None
-        nuevo_estado      = request.form.get('estado', lote['estado'])
         nuevas_obs        = request.form.get('observaciones', '')
         nuevos_operarios  = request.form.getlist('operarios')
 
-        # Ajuste de stock solo si cambió num_lotes
+        if tiene_sesiones and nuevo_num_lotes != lote['num_lotes']:
+            flash('Ya se registraron sesiones de envasado desde este lote — no se puede cambiar la cantidad '
+                  'mezclada. Elimina esas sesiones primero si necesitas corregir el número de lotes.', 'danger')
+            db.close()
+            return redirect(url_for('editar_lote', lote_id=lote_id))
+
+        # Ajuste de stock e inventario de litros solo si cambió num_lotes (y no hay envasados aún)
         if nuevo_num_lotes != lote['num_lotes']:
             # Revertir consumo de MP original
             for c in db.execute(
@@ -432,15 +686,6 @@ def editar_lote(lote_id):
                 db.execute(
                     "UPDATE materias_primas SET stock_actual = stock_actual + ? WHERE id=?",
                     (c['cantidad_usada'], c['materia_prima_id'])
-                )
-            # Revertir consumo de empaques original
-            for ce in db.execute(
-                "SELECT tipo_empaque_id, cantidad_usada FROM lote_consumo_empaque WHERE lote_id=?",
-                (lote_id,)
-            ).fetchall():
-                db.execute(
-                    "UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
-                    (ce['cantidad_usada'], ce['tipo_empaque_id'])
                 )
             # Calcular y aplicar nuevo consumo de MP
             nuevo_consumo = calcular_consumo(lote['producto_id'], nuevo_num_lotes, db)
@@ -454,32 +699,20 @@ def editar_lote(lote_id):
                     "UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id=?",
                     (item['cantidad'], item['mp_id'])
                 )
-            # Nuevo consumo de empaques desde el formulario
-            empaques_ids  = request.form.getlist('empaques_ids')
-            empaques_cant = request.form.getlist('empaques_cant')
-            db.execute("DELETE FROM lote_consumo_empaque WHERE lote_id=?", (lote_id,))
-            for emp_id, cant in zip(empaques_ids, empaques_cant):
-                if cant and int(cant) > 0:
-                    db.execute(
-                        "INSERT INTO lote_consumo_empaque (lote_id, tipo_empaque_id, cantidad_usada) VALUES (?,?,?)",
-                        (lote_id, emp_id, int(cant))
-                    )
-                    db.execute(
-                        "UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?",
-                        (int(cant), emp_id)
-                    )
+            prod = db.execute("SELECT litros_por_lote FROM productos WHERE id=?", (lote['producto_id'],)).fetchone()
+            nuevos_litros = round((prod['litros_por_lote'] or 0) * nuevo_num_lotes, 4)
+        else:
+            nuevos_litros = lote['litros_producidos']
 
         # Actualizar campos del lote
         db.execute("""
             UPDATE lotes_produccion SET
                 fecha_produccion=?, hora_inicio=?, hora_fin=?,
-                num_lotes=?, unidades_producidas=?, unidades_ingresadas=?,
-                estado=?, observaciones=?
+                num_lotes=?, observaciones=?, litros_producidos=?
             WHERE id=?
         """, (
             nueva_fecha, nueva_hora_inicio, nueva_hora_fin,
-            nuevo_num_lotes, nuevas_unidades, nuevas_uds_ing,
-            nuevo_estado, nuevas_obs, lote_id
+            nuevo_num_lotes, nuevas_obs, nuevos_litros, lote_id
         ))
 
         # Actualizar operarios
@@ -522,6 +755,7 @@ def editar_lote(lote_id):
         todos_operarios=todos_operarios,
         empaques_lote=empaques_lote,
         consumo_mp=consumo_mp,
+        tiene_sesiones=tiene_sesiones,
     )
 
 @app.route('/produccion/<int:lote_id>/eliminar', methods=['POST'])
@@ -537,6 +771,14 @@ def eliminar_lote(lote_id):
         flash('Lote no encontrado.', 'danger')
         db.close()
         return redirect(url_for('produccion_lista'))
+
+    tiene_sesiones = db.execute(
+        "SELECT COUNT(*) as n FROM envasado_sesiones WHERE lote_id=?", (lote_id,)
+    ).fetchone()['n'] > 0
+    if tiene_sesiones:
+        flash('Este lote ya tiene sesiones de envasado registradas. Elimina esas sesiones primero.', 'danger')
+        db.close()
+        return redirect(url_for('produccion_detalle', lote_id=lote_id))
 
     for c in db.execute(
         "SELECT materia_prima_id, cantidad_usada FROM lote_consumo_mp WHERE lote_id=?", (lote_id,)
@@ -562,8 +804,14 @@ def eliminar_lote(lote_id):
     db.close()
     return redirect(url_for('produccion_lista'))
 
-@app.route('/produccion/<int:lote_id>/avanzar-fase', methods=['POST'])
-def avanzar_fase(lote_id):
+@app.route('/produccion/<int:lote_id>/aprobar-qc', methods=['POST'])
+@operario_o_admin_required
+def avanzar_fase_lote(lote_id):
+    """Único avance posible a nivel de lote: Control Calidad -> Aprobado.
+    A partir de ahí el lote queda disponible para sesiones de envasado;
+    el resto de la trazabilidad (Envasado/Etiquetado/Almacenado) vive en
+    envasado_sesiones, porque un mismo lote puede alimentar varias sesiones
+    de productos distintos en días distintos."""
     db = get_db()
     lote = db.execute("SELECT * FROM lotes_produccion WHERE id=?", (lote_id,)).fetchone()
     if not lote:
@@ -572,45 +820,401 @@ def avanzar_fase(lote_id):
         return redirect(url_for('produccion_lista'))
 
     fase_actual = lote['fase_actual'] or 'Control Calidad'
-    if fase_actual not in FASES_PRODUCCION:
-        fase_actual = 'Control Calidad'
-    idx = FASES_PRODUCCION.index(fase_actual)
-
-    if idx >= len(FASES_PRODUCCION) - 1:
-        flash('Este lote ya completó todas las fases.', 'info')
+    if fase_actual != 'Control Calidad':
+        flash('Este lote ya pasó por Control de Calidad.', 'info')
         db.close()
         return redirect(url_for('produccion_detalle', lote_id=lote_id))
 
-    nueva_fase = FASES_PRODUCCION[idx + 1]
     ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
+    db.execute("""
+        UPDATE lotes_produccion SET fase_actual='Aprobado', fecha_control_calidad=? WHERE id=?
+    """, (ahora, lote_id))
 
-    col_ts = {
-        'Control Calidad': 'fecha_control_calidad',
-        'Envasado':        'fecha_envasado',
-        'Etiquetado':      'fecha_etiquetado',
-    }.get(fase_actual)
-
-    if nueva_fase == 'Almacenado':
-        db.execute(f"""
-            UPDATE lotes_produccion
-            SET fase_actual=?, {col_ts}=?, fecha_almacenamiento=?,
-                estado='Completado',
-                unidades_ingresadas=COALESCE(unidades_producidas, unidades_ingresadas)
-            WHERE id=?
-        """, (nueva_fase, ahora, ahora, lote_id))
-    else:
-        db.execute(f"""
-            UPDATE lotes_produccion
-            SET fase_actual=?, {col_ts}=?
-            WHERE id=?
-        """, (nueva_fase, ahora, lote_id))
-
-    registrar_log(db, 'Avanzar fase', 'Producción',
-                  f'Lote {lote["codigo_lote"]} avanzó a: {nueva_fase} ({session.get("nombre","")})')
+    registrar_log(db, 'Aprobar QC', 'Producción',
+                  f'Lote {lote["codigo_lote"]} aprobado en Control de Calidad ({session.get("nombre","")})')
     db.commit()
-    flash(f'Fase completada — Lote avanzó a: {nueva_fase}', 'success')
+    flash('Lote aprobado — ya puede envasarse.', 'success')
     db.close()
     return redirect(url_for('produccion_detalle', lote_id=lote_id))
+
+# ─── Envasado (embotellado) ────────────────────────────────────────────────────
+
+@app.route('/envasado')
+def envasado_lista():
+    db = get_db()
+    filtro_prod = request.args.get('producto', '')
+    filtro_fecha = request.args.get('fecha', '')
+    filtro_fase = request.args.get('fase', '')
+    q = """
+        SELECT es.*, p.nombre as producto_nombre, lp.codigo_lote
+        FROM envasado_sesiones es
+        JOIN productos p ON p.id = es.producto_id
+        JOIN lotes_produccion lp ON lp.id = es.lote_id
+        WHERE 1=1
+    """
+    params = []
+    if filtro_prod:
+        q += " AND es.producto_id=?"; params.append(filtro_prod)
+    if filtro_fecha:
+        q += " AND es.fecha=?"; params.append(filtro_fecha)
+    if filtro_fase:
+        q += " AND es.fase_actual=?"; params.append(filtro_fase)
+    q += " ORDER BY es.id DESC"
+    sesiones = db.execute(q, params).fetchall()
+    productos = db.execute("SELECT * FROM productos").fetchall()
+    db.close()
+    return render_template('envasado_lista.html', sesiones=sesiones, productos=productos,
+                           filtro_prod=filtro_prod, filtro_fecha=filtro_fecha, filtro_fase=filtro_fase)
+
+@app.route('/envasado/compatibles/<int:lote_id>')
+def productos_compatibles_json(lote_id):
+    db = get_db()
+    lote = db.execute("""
+        SELECT lp.*, p.formula_grupo_id as origen_grupo_id, p.id as origen_producto_id
+        FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
+        WHERE lp.id=?
+    """, (lote_id,)).fetchone()
+    if not lote:
+        db.close()
+        return jsonify({'error': 'Lote no encontrado'}), 404
+
+    origen = {'id': lote['origen_producto_id'], 'formula_grupo_id': lote['origen_grupo_id']}
+    compatibles = [p for p in db.execute("SELECT * FROM productos").fetchall() if grupo_compatible(p, origen)]
+
+    productos_json = []
+    for p in compatibles:
+        envases = db.execute(
+            "SELECT nombre, stock_actual FROM tipos_empaque WHERE producto_id=? AND categoria='Envase'", (p['id'],)
+        ).fetchall()
+        productos_json.append({
+            'id': p['id'], 'nombre': p['nombre'], 'tamano_envase_ml': p['tamano_envase_ml'],
+            'envases': [{'nombre': e['nombre'], 'stock_actual': e['stock_actual']} for e in envases]
+        })
+
+    litros_disp = litros_disponibles_lote(lote_id, db)
+    tanque = obtener_tanque(db)
+    db.close()
+    return jsonify({
+        'litros_disponibles': litros_disp,
+        'tanque_litros': tanque['litros_actuales'],
+        'espacio_tanque': round(CAPACIDAD_TANQUE_ENVASADO_L - tanque['litros_actuales'], 4),
+        'productos': productos_json
+    })
+
+@app.route('/envasado/nueva', methods=['GET', 'POST'])
+@operario_o_admin_required
+def envasado_nueva():
+    db = get_db()
+    tanque = obtener_tanque(db)
+
+    if request.method == 'POST':
+        lote_id = int(request.form['lote_id'])
+        producto_id = int(request.form['producto_id'])
+        fecha = request.form['fecha']
+        hora_inicio = request.form.get('hora_inicio', '')
+        hora_fin = request.form.get('hora_fin', '')
+        litros_agregados = float(request.form['litros_agregados'])
+        unidades_envasadas = int(request.form['unidades_envasadas'])
+        observaciones = request.form.get('observaciones', '')
+        operarios_ids = request.form.getlist('operarios')
+        forzar_negativo = es_admin() and request.form.get('forzar_stock_negativo') == 'on'
+
+        lote = db.execute("SELECT * FROM lotes_produccion WHERE id=?", (lote_id,)).fetchone()
+        producto = db.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
+
+        if not lote or lote['fase_actual'] != 'Aprobado':
+            flash('El lote no existe o todavía no pasó Control de Calidad.', 'danger')
+            db.close()
+            return redirect(url_for('envasado_nueva'))
+
+        # 1. Bloqueo de cruce de fórmula en el tanque
+        if tanque['litros_actuales'] > 0:
+            tanque_producto = db.execute("SELECT * FROM productos WHERE id=?", (tanque['producto_id'],)).fetchone()
+            if not grupo_compatible(producto, tanque_producto):
+                nombre_tanque = tanque_producto['nombre'] if tanque_producto else 'otro producto'
+                flash(f'El tanque de envasado tiene actualmente {tanque["litros_actuales"]} L de {nombre_tanque}. '
+                      f'No puedes envasar {producto["nombre"]} sin antes vaciar/limpiar el tanque.', 'danger')
+                db.close()
+                return redirect(url_for('envasado_nueva'))
+
+        # 2. Litros disponibles en el lote de origen
+        disponibles = litros_disponibles_lote(lote_id, db)
+        if litros_agregados > disponibles + 0.001:
+            flash(f'El lote {lote["codigo_lote"]} solo tiene {disponibles} L disponibles.', 'danger')
+            db.close()
+            return redirect(url_for('envasado_nueva'))
+
+        # 3. Capacidad del tanque de envasado
+        if tanque['litros_actuales'] + litros_agregados > CAPACIDAD_TANQUE_ENVASADO_L + 0.001:
+            espacio = round(CAPACIDAD_TANQUE_ENVASADO_L - tanque['litros_actuales'], 4)
+            flash(f'El tanque de envasado tiene capacidad para {CAPACIDAD_TANQUE_ENVASADO_L} L. '
+                  f'Espacio disponible ahora mismo: {espacio} L.', 'danger')
+            db.close()
+            return redirect(url_for('envasado_nueva'))
+
+        # 4. Stock de empaques (categoría Envase, detectados automáticamente por producto) suficiente
+        envases = db.execute(
+            "SELECT id, nombre FROM tipos_empaque WHERE producto_id=? AND categoria='Envase'", (producto_id,)
+        ).fetchall()
+        deltas = [('tipos_empaque', 'stock_actual', e['id'], unidades_envasadas, e['nombre']) for e in envases]
+        faltantes = verificar_stock_suficiente(db, deltas)
+        if faltantes and not forzar_negativo:
+            db.close()
+            flash('No hay empaques suficientes: ' + '; '.join(faltantes) +
+                  '. Un administrador puede forzar la operación si el stock está desactualizado.', 'danger')
+            return redirect(url_for('envasado_nueva'))
+
+        codigo = generar_codigo_sesion(lote, db)
+        unidades_teoricas = int((tanque['litros_actuales'] + litros_agregados) * 1000 / producto['tamano_envase_ml'])
+        ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        db.execute("""
+            INSERT INTO envasado_sesiones
+            (codigo_sesion, lote_id, producto_id, fecha, hora_inicio, hora_fin,
+             litros_agregados, unidades_teoricas, unidades_envasadas, fase_actual, fecha_envasado, observaciones)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (codigo, lote_id, producto_id, fecha, hora_inicio, hora_fin,
+              litros_agregados, unidades_teoricas, unidades_envasadas, 'Envasado', ahora, observaciones))
+        sesion_id = db.last_id()
+
+        for op_id in operarios_ids:
+            db.execute("INSERT OR IGNORE INTO envasado_operarios VALUES (?,?)", (sesion_id, op_id))
+
+        for e in envases:
+            db.execute(
+                "INSERT INTO envasado_consumo_empaque (envasado_id, tipo_empaque_id, cantidad_usada) VALUES (?,?,?)",
+                (sesion_id, e['id'], unidades_envasadas)
+            )
+            db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?",
+                       (unidades_envasadas, e['id']))
+
+        recalcular_tanque(db)
+
+        if faltantes:
+            registrar_log(db, 'Stock forzado a negativo', 'Envasado',
+                          f'Sesión {codigo} — {"; ".join(faltantes)} (forzado por {session.get("nombre","")})')
+        registrar_log(db, 'Nueva sesión de envasado', 'Envasado',
+                      f'{codigo} — {producto["nombre"]} × {unidades_envasadas} uds ({litros_agregados} L)')
+        db.commit()
+        flash(f'Sesión {codigo} registrada: {unidades_envasadas} unidades de {producto["nombre"]}.', 'success')
+        db.close()
+        return redirect(url_for('envasado_detalle', sesion_id=sesion_id))
+
+    lotes_disponibles = []
+    for lote in db.execute("""
+        SELECT lp.*, p.nombre as producto_nombre
+        FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
+        WHERE lp.fase_actual='Aprobado'
+        ORDER BY lp.id DESC
+    """).fetchall():
+        disp = litros_disponibles_lote(lote['id'], db)
+        if disp > 0.001:
+            fila = {k: lote[k] for k in lote.keys()}
+            fila['litros_disponibles'] = disp
+            lotes_disponibles.append(fila)
+
+    tanque_producto = None
+    if tanque['producto_id']:
+        tanque_producto = db.execute("SELECT * FROM productos WHERE id=?", (tanque['producto_id'],)).fetchone()
+
+    operarios = db.execute("SELECT * FROM operarios WHERE activo=1 ORDER BY nombre").fetchall()
+    hoy = date.today().isoformat()
+    db.close()
+    return render_template('envasado_nueva.html', lotes=lotes_disponibles, tanque=tanque,
+                           tanque_producto=tanque_producto, operarios=operarios, hoy=hoy,
+                           capacidad=CAPACIDAD_TANQUE_ENVASADO_L, es_admin=es_admin())
+
+@app.route('/envasado/<int:sesion_id>')
+def envasado_detalle(sesion_id):
+    db = get_db()
+    sesion = db.execute("""
+        SELECT es.*, p.nombre as producto_nombre, p.tamano_envase_ml, lp.codigo_lote
+        FROM envasado_sesiones es
+        JOIN productos p ON p.id=es.producto_id
+        JOIN lotes_produccion lp ON lp.id=es.lote_id
+        WHERE es.id=?
+    """, (sesion_id,)).fetchone()
+    if not sesion:
+        flash('Sesión no encontrada.', 'danger')
+        db.close()
+        return redirect(url_for('envasado_lista'))
+
+    operarios = db.execute("""
+        SELECT o.nombre, o.cargo FROM envasado_operarios eo
+        JOIN operarios o ON o.id=eo.operario_id WHERE eo.envasado_id=?
+    """, (sesion_id,)).fetchall()
+
+    empaques = db.execute("""
+        SELECT te.nombre, te.categoria, ce.cantidad_usada
+        FROM envasado_consumo_empaque ce JOIN tipos_empaque te ON te.id=ce.tipo_empaque_id
+        WHERE ce.envasado_id=?
+    """, (sesion_id,)).fetchall()
+
+    def _delta(a, b):
+        return None if (a is None or b is None) else (b - a)
+
+    def _clase(delta, base):
+        if delta is None:
+            return None
+        if delta == 0:
+            return 'ok'
+        tolerancia = max(2, round(0.02 * (base or 0)))
+        return 'warn' if abs(delta) <= tolerancia else 'danger'
+
+    d_etiq = _delta(sesion['unidades_envasadas'], sesion['unidades_etiquetadas'])
+    d_alm = _delta(sesion['unidades_etiquetadas'], sesion['unidades_almacenadas'])
+
+    db.close()
+    return render_template('envasado_detalle.html',
+        sesion=sesion, operarios=operarios, empaques=empaques,
+        d_etiq=d_etiq, d_alm=d_alm,
+        clase_etiq=_clase(d_etiq, sesion['unidades_envasadas']),
+        clase_alm=_clase(d_alm, sesion['unidades_etiquetadas']),
+        es_operario_o_admin=es_operario_o_admin(), es_admin=es_admin(),
+    )
+
+@app.route('/envasado/<int:sesion_id>/avanzar-fase', methods=['POST'])
+@operario_o_admin_required
+def avanzar_fase_envasado(sesion_id):
+    db = get_db()
+    sesion = db.execute("SELECT * FROM envasado_sesiones WHERE id=?", (sesion_id,)).fetchone()
+    if not sesion:
+        flash('Sesión no encontrada.', 'danger')
+        db.close()
+        return redirect(url_for('envasado_lista'))
+
+    cantidad_raw = request.form.get('cantidad', '').strip()
+    if not cantidad_raw.isdigit():
+        flash('Debes indicar la cantidad real contada para avanzar de fase.', 'warning')
+        db.close()
+        return redirect(url_for('envasado_detalle', sesion_id=sesion_id))
+    cantidad = int(cantidad_raw)
+    ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
+    fase = sesion['fase_actual']
+
+    if fase == 'Envasado':
+        etiqueta = db.execute(
+            "SELECT id, nombre FROM tipos_empaque WHERE producto_id=? AND categoria='Etiqueta' LIMIT 1",
+            (sesion['producto_id'],)
+        ).fetchone()
+        forzar_negativo = es_admin() and request.form.get('forzar_stock_negativo') == 'on'
+        if etiqueta:
+            faltantes = verificar_stock_suficiente(
+                db, [('tipos_empaque', 'stock_actual', etiqueta['id'], cantidad, etiqueta['nombre'])])
+            if faltantes and not forzar_negativo:
+                flash('No hay etiquetas suficientes: ' + '; '.join(faltantes) +
+                      '. Un administrador puede forzar la operación.', 'danger')
+                db.close()
+                return redirect(url_for('envasado_detalle', sesion_id=sesion_id))
+            db.execute(
+                "INSERT INTO envasado_consumo_empaque (envasado_id, tipo_empaque_id, cantidad_usada) VALUES (?,?,?)",
+                (sesion_id, etiqueta['id'], cantidad))
+            db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual - ? WHERE id=?", (cantidad, etiqueta['id']))
+        db.execute("""
+            UPDATE envasado_sesiones SET unidades_etiquetadas=?, fase_actual='Etiquetado', fecha_etiquetado=? WHERE id=?
+        """, (cantidad, ahora, sesion_id))
+        registrar_log(db, 'Avanzar a Etiquetado', 'Envasado',
+                      f'{sesion["codigo_sesion"]} — {cantidad} uds etiquetadas ({session.get("nombre","")})')
+        flash(f'Fase completada: {cantidad} unidades etiquetadas.', 'success')
+    elif fase == 'Etiquetado':
+        db.execute("""
+            UPDATE envasado_sesiones SET unidades_almacenadas=?, fase_actual='Almacenado', fecha_almacenamiento=? WHERE id=?
+        """, (cantidad, ahora, sesion_id))
+        registrar_log(db, 'Avanzar a Almacenado', 'Envasado',
+                      f'{sesion["codigo_sesion"]} — {cantidad} uds almacenadas ({session.get("nombre","")})')
+        flash(f'Fase completada: {cantidad} unidades almacenadas.', 'success')
+    else:
+        flash('Esta sesión ya completó todas las fases.', 'info')
+        db.close()
+        return redirect(url_for('envasado_detalle', sesion_id=sesion_id))
+
+    db.commit()
+    db.close()
+    return redirect(url_for('envasado_detalle', sesion_id=sesion_id))
+
+@app.route('/envasado/<int:sesion_id>/editar', methods=['GET', 'POST'])
+@admin_required
+def envasado_editar(sesion_id):
+    db = get_db()
+    sesion = db.execute("""
+        SELECT es.*, p.nombre as producto_nombre FROM envasado_sesiones es
+        JOIN productos p ON p.id=es.producto_id WHERE es.id=?
+    """, (sesion_id,)).fetchone()
+    if not sesion:
+        flash('Sesión no encontrada.', 'danger')
+        db.close()
+        return redirect(url_for('envasado_lista'))
+
+    if request.method == 'POST':
+        nuevos_litros = float(request.form.get('litros_agregados', sesion['litros_agregados']))
+        nuevas_unidades = int(request.form.get('unidades_envasadas', sesion['unidades_envasadas']))
+        nueva_fecha = request.form.get('fecha', sesion['fecha'])
+        nueva_hora = request.form.get('hora_inicio', sesion['hora_inicio'])
+        nuevas_obs = request.form.get('observaciones', sesion['observaciones'])
+
+        db.execute("""
+            UPDATE envasado_sesiones
+            SET litros_agregados=?, unidades_envasadas=?, fecha=?, hora_inicio=?, observaciones=?
+            WHERE id=?
+        """, (nuevos_litros, nuevas_unidades, nueva_fecha, nueva_hora, nuevas_obs, sesion_id))
+
+        recalcular_tanque(db)
+        registrar_log(db, 'Editar sesión de envasado', 'Envasado',
+                      f'{sesion["codigo_sesion"]} editada por {session.get("nombre","")}')
+        db.commit()
+        flash('Sesión actualizada. El estado del tanque se recalculó automáticamente.', 'success')
+        db.close()
+        return redirect(url_for('envasado_detalle', sesion_id=sesion_id))
+
+    db.close()
+    return render_template('envasado_editar.html', sesion=sesion)
+
+@app.route('/envasado/<int:sesion_id>/eliminar', methods=['POST'])
+@admin_required
+def envasado_eliminar(sesion_id):
+    db = get_db()
+    sesion = db.execute("SELECT * FROM envasado_sesiones WHERE id=?", (sesion_id,)).fetchone()
+    if not sesion:
+        flash('Sesión no encontrada.', 'danger')
+        db.close()
+        return redirect(url_for('envasado_lista'))
+
+    for ce in db.execute(
+        "SELECT tipo_empaque_id, cantidad_usada FROM envasado_consumo_empaque WHERE envasado_id=?", (sesion_id,)
+    ).fetchall():
+        db.execute("UPDATE tipos_empaque SET stock_actual = stock_actual + ? WHERE id=?",
+                   (ce['cantidad_usada'], ce['tipo_empaque_id']))
+    db.execute("DELETE FROM envasado_consumo_empaque WHERE envasado_id=?", (sesion_id,))
+    db.execute("DELETE FROM envasado_operarios WHERE envasado_id=?", (sesion_id,))
+    lote_id = sesion['lote_id']
+    db.execute("DELETE FROM envasado_sesiones WHERE id=?", (sesion_id,))
+
+    recalcular_tanque(db)
+    registrar_log(db, 'Eliminar sesión de envasado', 'Envasado',
+                  f'{sesion["codigo_sesion"]} eliminada por {session.get("nombre","")}')
+    db.commit()
+    flash(f'Sesión {sesion["codigo_sesion"]} eliminada. El stock y el tanque se recalcularon.', 'success')
+    db.close()
+    return redirect(url_for('produccion_detalle', lote_id=lote_id))
+
+@app.route('/envasado/tanque/vaciar', methods=['POST'])
+@operario_o_admin_required
+def envasado_tanque_vaciar():
+    if request.form.get('confirmar') != 'on':
+        flash('Debes confirmar que el tanque fue vaciado y limpiado físicamente.', 'warning')
+        return redirect(url_for('envasado_nueva'))
+    db = get_db()
+    ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
+    db.execute(
+        "INSERT INTO envasado_tanque_eventos (tipo, fecha_hora, usuario, observaciones) VALUES ('vaciado', ?, ?, ?)",
+        (ahora, session.get('nombre', ''), request.form.get('observaciones', ''))
+    )
+    recalcular_tanque(db)
+    registrar_log(db, 'Vaciar tanque de envasado', 'Envasado', f'Confirmado por {session.get("nombre","")}')
+    db.commit()
+    db.close()
+    flash('Tanque de envasado registrado como vacío/limpio.', 'success')
+    return redirect(url_for('envasado_nueva'))
 
 # ─── Inventario Materias Primas ────────────────────────────────────────────────
 
@@ -828,11 +1432,31 @@ def reportes():
     produccion_mes = db.execute("""
         SELECT p.nombre as producto, COUNT(*) as lotes,
                SUM(lp.num_lotes) as total_lotes_prod,
-               SUM(lp.unidades_producidas) as total_unidades,
-               SUM(lp.unidades_ingresadas) as total_ingresadas
+               SUM(lp.litros_producidos) as total_litros
         FROM lotes_produccion lp JOIN productos p ON p.id=lp.producto_id
         WHERE substr(lp.fecha_produccion, 1, 7)=?
         GROUP BY lp.producto_id, p.nombre
+    """, (mes,)).fetchall()
+
+    envasado_mes = db.execute("""
+        SELECT p.nombre as producto,
+               COUNT(*) as sesiones,
+               SUM(es.unidades_envasadas) as total_envasadas,
+               SUM(es.unidades_etiquetadas) as total_etiquetadas,
+               SUM(es.unidades_almacenadas) as total_almacenadas
+        FROM envasado_sesiones es JOIN productos p ON p.id=es.producto_id
+        WHERE substr(es.fecha, 1, 7)=?
+        GROUP BY es.producto_id, p.nombre
+    """, (mes,)).fetchall()
+
+    sesiones_con_merma = db.execute("""
+        SELECT es.id, es.codigo_sesion, p.nombre as producto, es.unidades_envasadas,
+               es.unidades_etiquetadas, es.unidades_almacenadas
+        FROM envasado_sesiones es JOIN productos p ON p.id=es.producto_id
+        WHERE substr(es.fecha, 1, 7)=?
+          AND ((es.unidades_etiquetadas IS NOT NULL AND es.unidades_etiquetadas != es.unidades_envasadas)
+            OR (es.unidades_almacenadas IS NOT NULL AND es.unidades_almacenadas != es.unidades_etiquetadas))
+        ORDER BY es.id DESC
     """, (mes,)).fetchall()
 
     consumo_mp_mes = db.execute("""
@@ -856,6 +1480,8 @@ def reportes():
     db.close()
     return render_template('reportes.html', mes=mes,
         produccion_mes=produccion_mes,
+        envasado_mes=envasado_mes,
+        sesiones_con_merma=sesiones_con_merma,
         consumo_mp_mes=consumo_mp_mes,
         compras_mp_mes=compras_mp_mes)
 
@@ -875,9 +1501,39 @@ def productos_lista():
         """, (p['id'],)).fetchall()
         producto_formulas[p['id']] = ingredientes
     mps = db.execute("SELECT * FROM materias_primas WHERE activo=1 ORDER BY nombre").fetchall()
+    formula_grupos = db.execute("SELECT * FROM formula_grupos ORDER BY nombre").fetchall()
     db.close()
     return render_template('productos.html', productos=productos,
-                           producto_formulas=producto_formulas, mps=mps)
+                           producto_formulas=producto_formulas, mps=mps, formula_grupos=formula_grupos)
+
+@app.route('/productos/grupos/nuevo', methods=['POST'])
+@admin_required
+def formula_grupo_nuevo():
+    db = get_db()
+    nombre = request.form['nombre'].strip()
+    descripcion = request.form.get('descripcion', '').strip()
+    existe = db.execute("SELECT id FROM formula_grupos WHERE nombre=?", (nombre,)).fetchone()
+    if existe:
+        flash(f'El grupo "{nombre}" ya existe.', 'warning')
+    else:
+        db.execute("INSERT INTO formula_grupos (nombre, descripcion) VALUES (?,?)", (nombre, descripcion))
+        registrar_log(db, 'Nuevo grupo de fórmula', 'Productos', nombre)
+        db.commit()
+        flash(f'Grupo "{nombre}" creado. Ahora asígnalo a los productos que comparten esa mezcla.', 'success')
+    db.close()
+    return redirect(url_for('productos_lista'))
+
+@app.route('/productos/<int:prod_id>/grupo', methods=['POST'])
+@admin_required
+def producto_asignar_grupo(prod_id):
+    db = get_db()
+    grupo_id = request.form.get('formula_grupo_id') or None
+    db.execute("UPDATE productos SET formula_grupo_id=? WHERE id=?", (grupo_id, prod_id))
+    registrar_log(db, 'Asignar grupo de fórmula', 'Productos', f'Producto #{prod_id} → grupo {grupo_id or "ninguno"}')
+    db.commit()
+    flash('Grupo de fórmula del producto actualizado.', 'success')
+    db.close()
+    return redirect(url_for('productos_lista'))
 
 @app.route('/productos/nuevo', methods=['POST'])
 @admin_required
@@ -890,11 +1546,13 @@ def producto_nuevo():
     unidades_lote = int(uds_raw) if uds_raw else int((litros_lote * 1000) / tamano_envase)
     descripcion = request.form.get('descripcion', '')
     prefijo = request.form.get('prefijo_lote', '').strip().upper()
+    formula_grupo_id = request.form.get('formula_grupo_id') or None
 
     db.execute("""
-        INSERT INTO productos (nombre, tamano_envase_ml, litros_por_lote, unidades_por_lote, descripcion, prefijo_lote)
-        VALUES (?,?,?,?,?,?)
-    """, (nombre, tamano_envase, litros_lote, unidades_lote, descripcion, prefijo or None))
+        INSERT INTO productos (nombre, tamano_envase_ml, litros_por_lote, unidades_por_lote, descripcion,
+                                prefijo_lote, formula_grupo_id)
+        VALUES (?,?,?,?,?,?,?)
+    """, (nombre, tamano_envase, litros_lote, unidades_lote, descripcion, prefijo or None, formula_grupo_id))
     prod_id = db.last_id()
 
     # Insertar ingredientes de la fórmula

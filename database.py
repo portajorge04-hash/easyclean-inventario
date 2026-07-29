@@ -294,6 +294,75 @@ SCHEMA_SQLITE = '''
         descripcion TEXT,
         fecha_hora TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS formula_grupos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL UNIQUE,
+        descripcion TEXT
+    );
+    CREATE TABLE IF NOT EXISTS envasado_tanque (
+        id INTEGER PRIMARY KEY,
+        lote_id INTEGER,
+        producto_id INTEGER,
+        formula_grupo_id INTEGER,
+        litros_actuales REAL DEFAULT 0,
+        actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (lote_id) REFERENCES lotes_produccion(id),
+        FOREIGN KEY (producto_id) REFERENCES productos(id),
+        FOREIGN KEY (formula_grupo_id) REFERENCES formula_grupos(id)
+    );
+    CREATE TABLE IF NOT EXISTS envasado_tanque_eventos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT NOT NULL,
+        fecha_hora TEXT NOT NULL,
+        usuario TEXT,
+        observaciones TEXT
+    );
+    CREATE TABLE IF NOT EXISTS envasado_sesiones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo_sesion TEXT UNIQUE NOT NULL,
+        lote_id INTEGER NOT NULL,
+        producto_id INTEGER NOT NULL,
+        fecha TEXT NOT NULL,
+        hora_inicio TEXT,
+        hora_fin TEXT,
+        litros_agregados REAL NOT NULL,
+        unidades_teoricas INTEGER,
+        unidades_envasadas INTEGER NOT NULL,
+        unidades_etiquetadas INTEGER,
+        unidades_almacenadas INTEGER,
+        fase_actual TEXT DEFAULT 'Envasado',
+        fecha_envasado TEXT,
+        fecha_etiquetado TEXT,
+        fecha_almacenamiento TEXT,
+        observaciones TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (lote_id) REFERENCES lotes_produccion(id),
+        FOREIGN KEY (producto_id) REFERENCES productos(id)
+    );
+    CREATE TABLE IF NOT EXISTS envasado_operarios (
+        envasado_id INTEGER NOT NULL,
+        operario_id INTEGER NOT NULL,
+        PRIMARY KEY (envasado_id, operario_id),
+        FOREIGN KEY (envasado_id) REFERENCES envasado_sesiones(id),
+        FOREIGN KEY (operario_id) REFERENCES operarios(id)
+    );
+    CREATE TABLE IF NOT EXISTS envasado_consumo_empaque (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        envasado_id INTEGER NOT NULL,
+        tipo_empaque_id INTEGER NOT NULL,
+        cantidad_usada INTEGER NOT NULL,
+        FOREIGN KEY (envasado_id) REFERENCES envasado_sesiones(id),
+        FOREIGN KEY (tipo_empaque_id) REFERENCES tipos_empaque(id)
+    );
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id INTEGER NOT NULL,
+        codigo TEXT NOT NULL,
+        expira_en TEXT NOT NULL,
+        usado INTEGER DEFAULT 0,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    );
 '''
 
 SCHEMA_PG = '''
@@ -448,6 +517,65 @@ SCHEMA_PG = '''
         modulo TEXT NOT NULL,
         descripcion TEXT,
         fecha_hora TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS formula_grupos (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL UNIQUE,
+        descripcion TEXT
+    );
+    CREATE TABLE IF NOT EXISTS envasado_tanque (
+        id INTEGER PRIMARY KEY,
+        lote_id INTEGER,
+        producto_id INTEGER,
+        formula_grupo_id INTEGER,
+        litros_actuales REAL DEFAULT 0,
+        actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS envasado_tanque_eventos (
+        id SERIAL PRIMARY KEY,
+        tipo TEXT NOT NULL,
+        fecha_hora TEXT NOT NULL,
+        usuario TEXT,
+        observaciones TEXT
+    );
+    CREATE TABLE IF NOT EXISTS envasado_sesiones (
+        id SERIAL PRIMARY KEY,
+        codigo_sesion TEXT UNIQUE NOT NULL,
+        lote_id INTEGER NOT NULL,
+        producto_id INTEGER NOT NULL,
+        fecha TEXT NOT NULL,
+        hora_inicio TEXT,
+        hora_fin TEXT,
+        litros_agregados REAL NOT NULL,
+        unidades_teoricas INTEGER,
+        unidades_envasadas INTEGER NOT NULL,
+        unidades_etiquetadas INTEGER,
+        unidades_almacenadas INTEGER,
+        fase_actual TEXT DEFAULT 'Envasado',
+        fecha_envasado TEXT,
+        fecha_etiquetado TEXT,
+        fecha_almacenamiento TEXT,
+        observaciones TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS envasado_operarios (
+        envasado_id INTEGER NOT NULL,
+        operario_id INTEGER NOT NULL,
+        PRIMARY KEY (envasado_id, operario_id)
+    );
+    CREATE TABLE IF NOT EXISTS envasado_consumo_empaque (
+        id SERIAL PRIMARY KEY,
+        envasado_id INTEGER NOT NULL,
+        tipo_empaque_id INTEGER NOT NULL,
+        cantidad_usada INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER NOT NULL,
+        codigo TEXT NOT NULL,
+        expira_en TEXT NOT NULL,
+        usado INTEGER DEFAULT 0,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
     );
 '''
 
@@ -709,12 +837,144 @@ def _mig_v005_fases_produccion(db):
     db.commit()
 
 
+def _backfill_lotes_legacy(db):
+    """
+    Convierte lotes_produccion creados antes del flujo de dos fases en el
+    nuevo modelo: litros_producidos/formula_grupo_id en el lote, y una
+    envasado_sesion retroactiva para los que ya habían avanzado de fase.
+    No se inventa merma: unidades_etiquetadas/almacenadas se copian del
+    mismo conteo que unidades_producidas/ingresadas, porque el sistema
+    anterior nunca registró un conteo real por fase.
+    """
+    lotes = db.execute("""
+        SELECT lp.*, p.litros_por_lote, p.formula_grupo_id AS prod_grupo_id
+        FROM lotes_produccion lp JOIN productos p ON p.id = lp.producto_id
+        WHERE lp.litros_producidos IS NULL
+    """).fetchall()
+
+    for lote in lotes:
+        litros = (lote['litros_por_lote'] or 0) * (lote['num_lotes'] or 1)
+        fase = lote['fase_actual'] or 'Control Calidad'
+        avanzado = fase in ('Envasado', 'Etiquetado', 'Almacenado')
+
+        db.execute("""
+            UPDATE lotes_produccion
+            SET litros_producidos=?, formula_grupo_id=?
+            WHERE id=?
+        """, (litros, lote['prod_grupo_id'], lote['id']))
+
+        ya_tiene_sesion = db.execute(
+            "SELECT id FROM envasado_sesiones WHERE lote_id=?", (lote['id'],)
+        ).fetchone()
+        if avanzado and not ya_tiene_sesion:
+            uds = lote['unidades_producidas'] or 0
+            uds_ing = lote['unidades_ingresadas'] or uds
+            db.execute("""
+                INSERT INTO envasado_sesiones
+                (codigo_sesion, lote_id, producto_id, fecha, litros_agregados,
+                 unidades_teoricas, unidades_envasadas, unidades_etiquetadas, unidades_almacenadas,
+                 fase_actual, fecha_envasado, fecha_etiquetado, fecha_almacenamiento, observaciones)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                f"{lote['codigo_lote']}-E01", lote['id'], lote['producto_id'], lote['fecha_produccion'], litros,
+                uds, uds,
+                uds if fase in ('Etiquetado', 'Almacenado') else None,
+                uds_ing if fase == 'Almacenado' else None,
+                fase, lote['fecha_envasado'], lote['fecha_etiquetado'], lote['fecha_almacenamiento'],
+                'Sesión generada automáticamente al migrar del flujo anterior — sin conteo real por fase (dato histórico).'
+            ))
+
+
+def _mig_v006_grupos_y_envasado(db):
+    """
+    Rediseña producción en dos fases desacopladas para TODOS los productos:
+    Producción (mezcla, tanque sin límite) -> Envasado (embotellado, tanque de 20L).
+    Añade 'grupo de fórmula' (Material Textil <-> Gamuza), crea Gamuza como
+    producto real, y prepara el rol 'operario' + recuperación de contraseña.
+    """
+    # 1. Columnas nuevas en tablas existentes
+    for tabla, col_name, col_def in [
+        ("productos",         "formula_grupo_id",  "INTEGER"),
+        ("lotes_produccion",  "litros_producidos",  "REAL"),
+        ("lotes_produccion",  "formula_grupo_id",   "INTEGER"),
+        ("tipos_empaque",     "categoria",          "TEXT"),
+        ("usuarios",          "email",              "TEXT"),
+        ("envasado_tanque",   "producto_id",         "INTEGER"),
+    ]:
+        try:
+            db.execute(f"ALTER TABLE {tabla} ADD COLUMN {col_name} {col_def}")
+            db.commit()
+        except Exception:
+            pass  # La columna ya existe
+
+    # 2. Backfill de categoria en empaques existentes
+    db.execute("UPDATE tipos_empaque SET categoria='Etiqueta' WHERE categoria IS NULL AND nombre LIKE '%Etiqueta%'")
+    db.execute("UPDATE tipos_empaque SET categoria='Envase' WHERE categoria IS NULL")
+    db.commit()
+
+    # 3. Grupo de fórmula compartido Material Textil <-> Gamuza
+    grupo = db.execute("SELECT id FROM formula_grupos WHERE nombre=?", ('Base Textil-Gamuza',)).fetchone()
+    if not grupo:
+        db.execute("INSERT INTO formula_grupos (nombre, descripcion) VALUES (?,?)",
+            ('Base Textil-Gamuza',
+             'Material Textil y Gamuza se mezclan con la misma materia prima; solo cambia el tamaño de envase.'))
+        db.commit()
+        grupo = db.execute("SELECT id FROM formula_grupos WHERE nombre=?", ('Base Textil-Gamuza',)).fetchone()
+    grupo_id = grupo['id']
+
+    mt = db.execute("SELECT id FROM productos WHERE nombre=?", ('Material Textil',)).fetchone()
+    if mt:
+        db.execute("UPDATE productos SET formula_grupo_id=? WHERE id=?", (grupo_id, mt['id']))
+        db.commit()
+
+    # 4. Crear Gamuza si no existe, copiando la fórmula de Material Textil
+    gamuza = db.execute("SELECT id FROM productos WHERE nombre=?", ('Gamuza',)).fetchone()
+    if not gamuza:
+        db.execute("""
+            INSERT INTO productos (nombre, tamano_envase_ml, litros_por_lote, unidades_por_lote,
+                                    descripcion, prefijo_lote, formula_grupo_id)
+            VALUES (?,?,?,?,?,?,?)
+        """, ('Gamuza', 110, 80, 727,
+              'Limpiador para gamuza — comparte materia prima con Material Textil', 'GZ', grupo_id))
+        db.commit()
+        gamuza_id = db.last_id()
+
+        if mt:
+            for ing in db.execute(
+                "SELECT materia_prima_id, cantidad, unidad FROM formula_ingredientes WHERE producto_id=?",
+                (mt['id'],)
+            ).fetchall():
+                db.execute(
+                    "INSERT INTO formula_ingredientes (producto_id, materia_prima_id, cantidad, unidad) VALUES (?,?,?,?)",
+                    (gamuza_id, ing['materia_prima_id'], ing['cantidad'], ing['unidad'])
+                )
+
+        db.execute(
+            "INSERT INTO tipos_empaque (nombre, producto_id, stock_actual, stock_minimo, categoria) VALUES (?,?,?,?,?)",
+            ('Envase 110ml (Gamuza)', gamuza_id, 0, 300, 'Envase'))
+        db.execute(
+            "INSERT INTO tipos_empaque (nombre, producto_id, stock_actual, stock_minimo, categoria) VALUES (?,?,?,?,?)",
+            ('Etiqueta Gamuza', gamuza_id, 0, 300, 'Etiqueta'))
+        db.commit()
+
+    # 5. Fila única del tanque de envasado (id=1, vacío)
+    if not db.execute("SELECT id FROM envasado_tanque WHERE id=1").fetchone():
+        db.execute(
+            "INSERT INTO envasado_tanque (id, lote_id, producto_id, formula_grupo_id, litros_actuales) VALUES (1, NULL, NULL, NULL, 0)")
+        db.commit()
+
+    # 6. Backfill de lotes_produccion existentes -> litros/grupo + sesión retroactiva
+    _backfill_lotes_legacy(db)
+    db.commit()
+
+
 MIGRACIONES = [
     ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
     ('v002_articulos_bodega', _mig_v002_articulos_bodega),
     ('v003_usuarios',         _mig_v003_usuarios),
     ('v004_restore_backup_20260504', _mig_v004_restore_backup_20260504),
     ('v005_fases_produccion', _mig_v005_fases_produccion),
+    ('v006_grupos_y_envasado', _mig_v006_grupos_y_envasado),
 ]
 
 # ─── Guardia de datos (corre en CADA arranque) ────────────────────────────────

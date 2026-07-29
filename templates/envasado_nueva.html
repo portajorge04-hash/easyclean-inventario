@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+{% block title %}Nueva Sesión de Envasado{% endblock %}
+{% block page_title %}Registrar Sesión de Envasado{% endblock %}
+
+{% block content %}
+
+<!-- Paso 1: estado del tanque -->
+<div class="card mb-3">
+  <div class="card-body py-3 px-4">
+    {% if tanque['litros_actuales'] and tanque['litros_actuales'] > 0 %}
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <span class="badge px-3 py-2" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-size:.85rem">
+        <i class="bi bi-droplet-half me-1"></i>
+        Tanque ocupado: {{ '%.2f'|format(tanque['litros_actuales']) }} L de {{ tanque_producto['nombre'] if tanque_producto else '—' }}
+      </span>
+      <span class="text-muted small">Solo puedes envasar productos que comparten esta misma mezcla, a menos que vacíes el tanque.</span>
+      <button type="button" class="btn btn-sm btn-outline-danger ms-auto" data-bs-toggle="modal" data-bs-target="#modalVaciar">
+        <i class="bi bi-trash3 me-1"></i>Vaciar / Limpiar Tanque
+      </button>
+    </div>
+    {% else %}
+    <span class="badge px-3 py-2" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.85rem">
+      <i class="bi bi-droplet me-1"></i>Tanque vacío — listo para cualquier producto
+    </span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body p-4">
+        <form method="POST" id="formEnvasado">
+
+          <!-- Paso 2: lote de origen -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">1. Lote de origen (mezcla) <span class="text-danger">*</span></label>
+            <select name="lote_id" id="lote_id" class="form-select" required>
+              <option value="">— Seleccionar —</option>
+              {% for l in lotes %}
+              <option value="{{ l['id'] }}">{{ l['codigo_lote'] }} — {{ l['producto_nombre'] }} ({{ l['litros_disponibles'] }} L disponibles)</option>
+              {% endfor %}
+              {% if not lotes %}
+              <option value="" disabled>No hay lotes aprobados con litros disponibles</option>
+              {% endif %}
+            </select>
+            <div class="form-text">Solo se muestran lotes ya aprobados en Control de Calidad, con litros por envasar.</div>
+          </div>
+
+          <!-- Paso 3: producto a envasar -->
+          <div class="mb-3" id="seccion-producto" style="display:none">
+            <label class="form-label fw-semibold">2. Producto a envasar esta sesión <span class="text-danger">*</span></label>
+            <select name="producto_id" id="producto_id" class="form-select" required></select>
+            <div class="form-text">Solo se listan productos compatibles con esta mezcla (misma fórmula / grupo).</div>
+          </div>
+
+          <!-- Paso 4: litros -->
+          <div class="row g-3 mb-3" id="seccion-litros" style="display:none">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">3. Litros a agregar al tanque <span class="text-danger">*</span></label>
+              <input type="number" step="0.01" min="0.01" name="litros_agregados" id="litros_agregados" class="form-control" required>
+              <div class="form-text" id="hint-litros"></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">4. Unidades realmente envasadas (conteo) <span class="text-danger">*</span></label>
+              <input type="number" min="0" step="1" name="unidades_envasadas" id="unidades_envasadas" class="form-control" required>
+              <div class="form-text" id="hint-unidades"></div>
+            </div>
+          </div>
+
+          <!-- Paso 5: empaques (automático) -->
+          <div class="mb-3" id="seccion-empaques" style="display:none">
+            <label class="form-label fw-semibold">5. Empaques que se descontarán automáticamente</label>
+            <div id="lista-empaques" class="small"></div>
+          </div>
+
+          {% if es_admin %}
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="forzar_stock_negativo" id="forzar_stock_negativo">
+            <label class="form-check-label small text-danger" for="forzar_stock_negativo">
+              Sé que esto puede dejar stock de empaques en negativo — continuar de todas formas.
+            </label>
+          </div>
+          {% endif %}
+
+          <!-- Operarios / fecha -->
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Fecha <span class="text-danger">*</span></label>
+              <input type="date" name="fecha" class="form-control" value="{{ hoy }}" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Hora Inicio</label>
+              <input type="time" name="hora_inicio" class="form-control">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Hora Fin</label>
+              <input type="time" name="hora_fin" class="form-control">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Operarios</label>
+            <div class="row g-2">
+              {% for op in operarios %}
+              <div class="col-md-4">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="operarios" value="{{ op['id'] }}" id="op{{ op['id'] }}">
+                  <label class="form-check-label" for="op{{ op['id'] }}">{{ op['nombre'] }}</label>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Observaciones</label>
+            <textarea name="observaciones" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-check-circle me-1"></i> Registrar Sesión
+            </button>
+            <a href="/envasado" class="btn btn-outline-secondary">Cancelar</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title"><i class="bi bi-info-circle me-1"></i>Recordatorio</h6>
+        <ul class="small text-muted mb-0 ps-3">
+          <li>El tanque de envasado tiene capacidad de <strong>{{ capacidad }} L</strong>.</li>
+          <li>Si sobra líquido, queda en el tanque para la próxima sesión — no hace falta usarlo todo de una vez.</li>
+          <li>Cuenta las unidades reales, no confíes solo en el estimado.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal vaciar tanque -->
+<div class="modal fade" id="modalVaciar" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="/envasado/tanque/vaciar">
+        <div class="modal-header">
+          <h5 class="modal-title">Vaciar / Limpiar Tanque de Envasado</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">Usa esto solo cuando el tanque físico ya esté vacío y limpio, listo para un producto de otra fórmula.</p>
+          <div class="mb-3">
+            <label class="form-label small">Observaciones (opcional)</label>
+            <textarea name="observaciones" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="confirmar" id="confirmarVaciado" required>
+            <label class="form-check-label small" for="confirmarVaciado">
+              Confirmo que el tanque fue vaciado y limpiado físicamente.
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger">Confirmar Vaciado</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const loteSelect = document.getElementById('lote_id');
+const productoSelect = document.getElementById('producto_id');
+const litrosInput = document.getElementById('litros_agregados');
+const unidadesInput = document.getElementById('unidades_envasadas');
+let datosActuales = null;
+
+loteSelect.addEventListener('change', async () => {
+  const loteId = loteSelect.value;
+  document.getElementById('seccion-producto').style.display = 'none';
+  document.getElementById('seccion-litros').style.display = 'none';
+  document.getElementById('seccion-empaques').style.display = 'none';
+  if (!loteId) return;
+
+  const res = await fetch(`/envasado/compatibles/${loteId}`);
+  datosActuales = await res.json();
+
+  productoSelect.innerHTML = '<option value="">— Seleccionar —</option>' +
+    datosActuales.productos.map(p => `<option value="${p.id}" data-ml="${p.tamano_envase_ml}">${p.nombre} (${p.tamano_envase_ml} ml)</option>`).join('');
+
+  document.getElementById('seccion-producto').style.display = 'block';
+  document.getElementById('seccion-litros').style.display = 'block';
+
+  const espacio = Math.min(datosActuales.litros_disponibles, datosActuales.espacio_tanque);
+  document.getElementById('hint-litros').textContent =
+    `Disponible en el lote: ${datosActuales.litros_disponibles} L · Espacio libre en el tanque: ${datosActuales.espacio_tanque} L (máx. a agregar ahora: ${espacio.toFixed(2)} L)`;
+  litrosInput.max = espacio;
+
+  actualizarEmpaques();
+});
+
+productoSelect.addEventListener('change', () => {
+  actualizarUnidadesEstimadas();
+  actualizarEmpaques();
+});
+litrosInput.addEventListener('input', actualizarUnidadesEstimadas);
+
+function actualizarUnidadesEstimadas() {
+  const opt = productoSelect.options[productoSelect.selectedIndex];
+  if (!opt || !opt.dataset.ml || !litrosInput.value) return;
+  const ml = parseFloat(opt.dataset.ml);
+  const tanqueActual = datosActuales ? datosActuales.tanque_litros : 0;
+  const litros = tanqueActual + parseFloat(litrosInput.value || 0);
+  const estimado = Math.floor((litros * 1000) / ml);
+  document.getElementById('hint-unidades').textContent = `Estimado según litros: ${estimado} unidades (cuenta las reales al envasar).`;
+  if (!unidadesInput.value) unidadesInput.placeholder = estimado;
+}
+
+function actualizarEmpaques() {
+  const pid = productoSelect.value;
+  const cont = document.getElementById('lista-empaques');
+  const secc = document.getElementById('seccion-empaques');
+  if (!pid || !datosActuales) { secc.style.display = 'none'; return; }
+  const prod = datosActuales.productos.find(p => String(p.id) === String(pid));
+  if (!prod || !prod.envases || prod.envases.length === 0) {
+    cont.innerHTML = '<span class="text-muted">Este producto no tiene envases registrados en Inventario &gt; Empaques.</span>';
+  } else {
+    cont.innerHTML = prod.envases.map(e =>
+      `<div class="d-flex justify-content-between border-bottom py-1">
+        <span>${e.nombre}</span><span class="text-muted">stock: ${e.stock_actual}</span>
+      </div>`).join('');
+  }
+  secc.style.display = 'block';
+}
+</script>
+{% endblock %}
