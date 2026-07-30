@@ -1076,6 +1076,15 @@ def _mig_v007_grupos_y_envasado(db):
         db.commit()
 
 
+def _mig_v008_ajuste_manual_lote(db):
+    """Añade la marca de 'registro retroactivo / consumo ajustado a mano' a lotes_produccion."""
+    try:
+        db.execute("ALTER TABLE lotes_produccion ADD COLUMN consumo_ajustado_manual INTEGER DEFAULT 0")
+        db.commit()
+    except Exception:
+        pass  # La columna ya existe
+
+
 MIGRACIONES = [
     ('v001_datos_iniciales',  _mig_v001_datos_iniciales),
     ('v002_articulos_bodega', _mig_v002_articulos_bodega),
@@ -1084,6 +1093,7 @@ MIGRACIONES = [
     ('v005_fases_produccion', _mig_v005_fases_produccion),
     ('v006_restore_backup_20260531', _mig_v006_restore_backup_20260531),
     ('v007_grupos_y_envasado', _mig_v007_grupos_y_envasado),
+    ('v008_ajuste_manual_lote', _mig_v008_ajuste_manual_lote),
 ]
 
 # ─── Guardia de datos (corre en CADA arranque) ────────────────────────────────

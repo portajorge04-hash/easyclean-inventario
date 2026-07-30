@@ -3,6 +3,13 @@
 {% block page_title %}Lote: {{ lote['codigo_lote'] }}{% endblock %}
 
 {% block content %}
+{% if lote['consumo_ajustado_manual'] %}
+<div class="alert alert-warning py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-clock-history me-1"></i>
+  <strong>Registro retroactivo:</strong> el consumo de materia prima de este lote se ajustó manualmente
+  (no es el cálculo automático de la fórmula). Ver Observaciones para el detalle.
+</div>
+{% endif %}
 <!-- ── ESTADO DEL LOTE (mezcla) ────────────────────────────────── -->
 <div class="card mb-3">
   <div class="card-body py-3 px-4">

@@ -518,12 +518,35 @@ def produccion_nueva():
         observaciones = request.form.get('observaciones', '')
         operarios_ids = request.form.getlist('operarios')
         forzar_negativo = es_admin() and request.form.get('forzar_stock_negativo') == 'on'
+        retroactivo = es_admin() and request.form.get('retroactivo') == 'on'
 
         prod = db.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
         litros_producidos = round((prod['litros_por_lote'] or 0) * num_lotes, 4)
 
-        # Verificar stock suficiente de materia prima ANTES de escribir nada
         consumo = calcular_consumo(producto_id, num_lotes, db)
+
+        if retroactivo:
+            if not observaciones.strip():
+                db.close()
+                flash('Para un registro retroactivo debes explicar en Observaciones por qué se ajustó manualmente el consumo.', 'warning')
+                return redirect(url_for('produccion_nueva'))
+            # El admin edita manualmente cuánto descontar de cada insumo (mismo orden que se mostró en la tabla)
+            cantidades_ajustadas = {}
+            for mp_id_str, cant_str in zip(request.form.getlist('mp_ids'), request.form.getlist('mp_cantidades')):
+                try:
+                    cantidades_ajustadas[int(mp_id_str)] = max(0.0, float(cant_str))
+                except (ValueError, TypeError):
+                    cantidades_ajustadas[int(mp_id_str)] = 0.0
+            consumo_ajustado = []
+            for item in consumo:
+                cantidad = round(cantidades_ajustadas.get(item['mp_id'], 0.0), 4)
+                if cantidad > 0:
+                    nuevo = dict(item)
+                    nuevo['cantidad'] = cantidad
+                    consumo_ajustado.append(nuevo)
+            consumo = consumo_ajustado
+
+        # Verificar stock suficiente de materia prima ANTES de escribir nada
         deltas = [('materias_primas', 'stock_actual', item['mp_id'], item['cantidad'], item['nombre'])
                   for item in consumo]
         faltantes = verificar_stock_suficiente(db, deltas)
@@ -538,10 +561,11 @@ def produccion_nueva():
         db.execute("""
             INSERT INTO lotes_produccion
             (codigo_lote, producto_id, fecha_produccion, hora_inicio, hora_fin,
-             num_lotes, observaciones, litros_producidos, formula_grupo_id, fase_actual)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+             num_lotes, observaciones, litros_producidos, formula_grupo_id, fase_actual, consumo_ajustado_manual)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """, (codigo, producto_id, fecha, hora_inicio, hora_fin,
-              num_lotes, observaciones, litros_producidos, prod['formula_grupo_id'], 'Control Calidad'))
+              num_lotes, observaciones, litros_producidos, prod['formula_grupo_id'], 'Control Calidad',
+              1 if retroactivo else 0))
 
         lote_id = db.last_id()
 
@@ -563,8 +587,13 @@ def produccion_nueva():
             registrar_log(db, 'Stock forzado a negativo', 'Producción',
                           f'Lote {codigo} — {"; ".join(faltantes)} (forzado por {session.get("nombre","")})')
 
-        registrar_log(db, 'Nuevo lote (mezcla)', 'Producción',
-                      f'Lote {codigo} — {prod["nombre"]} × {num_lotes} ({litros_producidos} L)')
+        if retroactivo:
+            registrar_log(db, 'Nuevo lote (registro retroactivo, ajuste manual)', 'Producción',
+                          f'Lote {codigo} — {prod["nombre"]} × {num_lotes} ({litros_producidos} L) — '
+                          f'consumo ajustado a mano por {session.get("nombre","")}: {observaciones}')
+        else:
+            registrar_log(db, 'Nuevo lote (mezcla)', 'Producción',
+                          f'Lote {codigo} — {prod["nombre"]} × {num_lotes} ({litros_producidos} L)')
         db.commit()
         flash(f'Lote {codigo} mezclado correctamente ({litros_producidos} L). '
               f'Pasa por Control de Calidad antes de poder envasarlo.', 'success')

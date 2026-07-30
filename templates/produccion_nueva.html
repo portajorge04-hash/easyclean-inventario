@@ -62,7 +62,23 @@
             </div>
           </div>
 
-          <!-- Materias Primas (calculadas automáticamente) -->
+          {% if es_admin %}
+          <div class="border rounded p-2 mb-3" style="background:#fff8ec;border-color:#f5d38a!important">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="retroactivo" name="retroactivo">
+              <label class="form-check-label small fw-semibold" for="retroactivo">
+                <i class="bi bi-clock-history me-1"></i>Registro retroactivo — ajustar manualmente cuánta materia prima descontar
+              </label>
+            </div>
+            <div class="small text-muted mt-1">
+              Uso excepcional: solo para mezclas que ya se hicieron físicamente y cuyo consumo real (total o parcial) ya se
+              reconcilió a mano en el stock. Al marcarlo, la cantidad de cada materia prima en la tabla de abajo se vuelve
+              editable — pon en 0 lo que ya se descontó por otro medio, y deja el valor real en lo que falte por descontar hoy.
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Materias Primas (calculadas automáticamente, o editables en modo retroactivo) -->
           <div class="mb-3" id="seccion-mp" style="display:none">
             <label class="form-label fw-semibold">Materias Primas a Consumir</label>
             <div class="table-responsive">
@@ -87,8 +103,9 @@
 
           <!-- Observaciones -->
           <div class="mb-4">
-            <label class="form-label fw-semibold">Observaciones</label>
-            <textarea name="observaciones" class="form-control" rows="2" placeholder="Novedades, ajustes, observaciones de la mezcla..."></textarea>
+            <label class="form-label fw-semibold">Observaciones <span class="text-danger" id="obs-requerido" style="display:none">*</span></label>
+            <textarea name="observaciones" id="observaciones" class="form-control" rows="2" placeholder="Novedades, ajustes, observaciones de la mezcla..."></textarea>
+            <div class="form-text" id="obs-hint" style="display:none">Obligatorio en registro retroactivo: explica qué se ajustó y por qué.</div>
           </div>
 
           <div class="d-flex gap-2">
@@ -129,32 +146,41 @@
 <script>
 const productoSelect = document.getElementById('producto_id');
 const numLotesInput = document.getElementById('num_lotes');
+const retroactivoChk = document.getElementById('retroactivo');
+let ultimoConsumo = [];
 
-async function actualizarFormula() {
-  const pid = productoSelect.value;
-  const nl = numLotesInput.value || 1;
-  if (!pid) return;
-
-  const res = await fetch(`/produccion/formula/${pid}/${nl}`);
-  const data = await res.json();
-
-  document.getElementById('litros_estimados').value = data.litros_producidos + ' L';
-
+function renderTablaMp() {
   const bodyMp = document.getElementById('body-mp');
+  const esRetroactivo = retroactivoChk && retroactivoChk.checked;
   bodyMp.innerHTML = '';
   let hayFaltante = false;
-  data.consumo.forEach(item => {
+
+  ultimoConsumo.forEach(item => {
     const negativo = item.disponible < 0;
-    if (negativo) hayFaltante = true;
+    if (negativo && !esRetroactivo) hayFaltante = true;
     const tr = document.createElement('tr');
     if (negativo) tr.classList.add('table-danger');
-    tr.innerHTML = `
-      <td>${item.nombre}</td>
-      <td><strong>${item.cantidad}</strong></td>
-      <td>${item.unidad}</td>
-      <td>${item.stock_actual}</td>
-      <td>${item.disponible}${negativo ? ' <i class="bi bi-exclamation-triangle-fill text-danger"></i>' : ''}</td>
-    `;
+    if (esRetroactivo) {
+      tr.innerHTML = `
+        <td>${item.nombre}</td>
+        <td>
+          <input type="hidden" name="mp_ids" value="${item.mp_id}">
+          <input type="number" step="0.0001" min="0" name="mp_cantidades" class="form-control form-control-sm"
+                 value="${item.cantidad}" style="max-width:120px">
+        </td>
+        <td>${item.unidad}</td>
+        <td>${item.stock_actual}</td>
+        <td class="text-muted small">Editable</td>
+      `;
+    } else {
+      tr.innerHTML = `
+        <td>${item.nombre}</td>
+        <td><strong>${item.cantidad}</strong></td>
+        <td>${item.unidad}</td>
+        <td>${item.stock_actual}</td>
+        <td>${item.disponible}${negativo ? ' <i class="bi bi-exclamation-triangle-fill text-danger"></i>' : ''}</td>
+      `;
+    }
     bodyMp.appendChild(tr);
   });
   document.getElementById('seccion-mp').style.display = 'block';
@@ -169,6 +195,19 @@ async function actualizarFormula() {
     alerta.style.display = 'none';
     if (chkWrap) chkWrap.style.display = 'none';
   }
+}
+
+async function actualizarFormula() {
+  const pid = productoSelect.value;
+  const nl = numLotesInput.value || 1;
+  if (!pid) return;
+
+  const res = await fetch(`/produccion/formula/${pid}/${nl}`);
+  const data = await res.json();
+  ultimoConsumo = data.consumo;
+
+  document.getElementById('litros_estimados').value = data.litros_producidos + ' L';
+  renderTablaMp();
 
   // Fórmula lateral
   const card = document.getElementById('card-formula');
@@ -185,5 +224,23 @@ async function actualizarFormula() {
 productoSelect.addEventListener('change', actualizarFormula);
 numLotesInput.addEventListener('change', actualizarFormula);
 numLotesInput.addEventListener('input', actualizarFormula);
+
+if (retroactivoChk) {
+  retroactivoChk.addEventListener('change', () => {
+    renderTablaMp();
+    const obsInput = document.getElementById('observaciones');
+    const obsReq = document.getElementById('obs-requerido');
+    const obsHint = document.getElementById('obs-hint');
+    if (retroactivoChk.checked) {
+      obsInput.required = true;
+      obsReq.style.display = 'inline';
+      obsHint.style.display = 'block';
+    } else {
+      obsInput.required = false;
+      obsReq.style.display = 'none';
+      obsHint.style.display = 'none';
+    }
+  });
+}
 </script>
 {% endblock %}
