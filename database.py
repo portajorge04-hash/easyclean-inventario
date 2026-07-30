@@ -120,6 +120,16 @@ class UnifiedDB:
     def commit(self):
         self._conn.commit()
 
+    def rollback(self):
+        """En PostgreSQL, un error dentro de una transacción la deja 'abortada' —
+        cualquier siguiente execute() vuelve a fallar hasta hacer rollback().
+        Necesario después de capturar una excepción esperada (ej. ALTER TABLE
+        sobre una columna que ya existe) para poder seguir usando la conexión."""
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
     def close(self):
         self._conn.close()
 
@@ -993,7 +1003,7 @@ def _mig_v007_grupos_y_envasado(db):
             db.execute(f"ALTER TABLE {tabla} ADD COLUMN {col_name} {col_def}")
             db.commit()
         except Exception:
-            pass  # La columna ya existe
+            db.rollback()  # La columna ya existe — en PostgreSQL hay que limpiar la transacción abortada
 
     # 2. Backfill de categoria en empaques existentes
     db.execute("UPDATE tipos_empaque SET categoria='Etiqueta' WHERE categoria IS NULL AND nombre LIKE '%Etiqueta%'")
@@ -1082,7 +1092,7 @@ def _mig_v008_ajuste_manual_lote(db):
         db.execute("ALTER TABLE lotes_produccion ADD COLUMN consumo_ajustado_manual INTEGER DEFAULT 0")
         db.commit()
     except Exception:
-        pass  # La columna ya existe
+        db.rollback()  # La columna ya existe — en PostgreSQL hay que limpiar la transacción abortada
 
 
 MIGRACIONES = [
